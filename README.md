@@ -1,59 +1,41 @@
-# QuantBoard — Dashboard y Backtester en Python
+# QuantBoard — Análisis técnico y Backtesting (Streamlit + yfinance + Plotly)
 
-**QuantBoard** es una app en **Streamlit** para análisis técnico rápido y **backtesting** simple de acciones usando datos de **yfinance**.
-
-
-## Características
-- ✅ Descarga de datos (yfinance) con caché
-- ✅ Indicadores: SMA/EMA/RSI/MACD
-- ✅ Estrategias incluidas: **Cruce de Medias** y **RSI** (long-only)
-- ✅ Backtester vectorizado con métricas (Return, CAGR, Max Drawdown, Sharpe)
-- ✅ Gráficos interactivos (**Plotly**) y descarga de CSV/Trades
-- ✅ Interfaz web (**Streamlit**) + **CLI** (`python cli.py ...`)
-- ✅ Tests y CI listos para GitHub Actions
-
-## Requisitos
-- Python 3.10+
-- Instala dependencias:
-  ```bash
-  pip install -r requirements.txt
-  ```
-
-## Ejecutar la app
-```bash
-streamlit run streamlit_app.py
-```
-
-## Ejecutar un backtest por CLI
-```bash
-python cli.py --ticker AAPL --start 2023-01-01 --strategy sma --fast 10 --slow 30
-```
-
-## Estructura
-```
-quantboard/
-  ├─ quantboard/
-  │   ├─ __init__.py
-  │   ├─ data.py
-  │   ├─ indicators.py
-  │   ├─ strategies.py
-  │   ├─ backtest.py
-  │   ├─ plots.py
-  │   └─ utils.py
-  ├─ streamlit_app.py
-  ├─ cli.py
-  ├─ requirements.txt
-  ├─ tests/
-  │   └─ test_indicators.py
-  └─ .github/workflows/python.yml
-```
-
-## Roadmap (ideas para seguir creciendo)
-- Multi-asset & portfolios (equity, crypto, ETFs)
-- Órdenes con stop/TP, comisiones avanzadas, shorts
-- Factores (value, momentum), walk-forward, optimizadores
-- Exportar a HTML/PDF directo desde la app
+Dashboard interactivo para analizar acciones con indicadores técnicos (SMA, RSI) y correr backtests simples de cruces de medias.  
+Hecho en **Python + Streamlit + yfinance + Plotly**.
 
 ---
 
-Hecho con ❤️ en Python. Si te sirve, una ⭐ en GitHub ayuda.
+## ¿Qué hace?
+- 📈 **Gráfico de precio** con **SMA rápida/lenta** y **RSI** (períodos configurables).
+- 🧪 **Backtest** básico de **cruce de medias** (señales Buy/Sell y PnL simple).
+- ⚙️ Parámetros ajustables (ticker, fechas, intervalo).
+- 💻 UI 100% web con **Streamlit**.
+
+---
+
+## Requisitos
+- Python **3.10+**
+- Dependencias en `requirements.txt`
+
+---
+
+## Cómo correrlo (3 pasos)
+
+```bash
+# 1) Clonar
+git clone https://github.com/felipeimpieri/quantboard.git
+cd quantboard
+
+# 2) Entorno e instalaciones
+# Windows (PowerShell)
+py -3 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+# macOS/Linux
+python3 -m venv .venv
+source .venv/bin/activate
+
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+
+# 3) Iniciar
+python -m streamlit run streamlit_app.py
