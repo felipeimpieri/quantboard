@@ -1,41 +1,46 @@
-# QuantBoard — Análisis técnico y Backtesting (Streamlit + yfinance + Plotly)
 
-Dashboard interactivo para analizar acciones con indicadores técnicos (SMA, RSI) y correr backtests simples de cruces de medias.  
-Hecho en **Python + Streamlit + yfinance + Plotly**.
+# QuantBoard — Análisis técnico y Backtesting
+Dashboard interactivo hecho con **Streamlit + yfinance + Plotly** para analizar precios, aplicar indicadores y correr backtests simples.
+
+> **v0.2 – Novedades**
+> - Indicadores: **SMA**, **EMA**, **RSI**, **Bollinger** (on/off desde la UI).
+> - Estrategias de señales: **SMA crossover**, **RSI thresholds**, **Bollinger mean-reversion**, **Donchian breakout**.
+> - Backtest con métricas: **CAGR**, **Sharpe**, **Max Drawdown**.
+> - **Grid search** de SMA (heatmap) para explorar combinaciones *fast/slow*.
+> - Limpieza de estructura de paquete (`quantboard/…`) y `.gitignore`.
 
 ---
 
-## ¿Qué hace?
-- 📈 **Gráfico de precio** con **SMA rápida/lenta** y **RSI** (períodos configurables).
-- 🧪 **Backtest** básico de **cruce de medias** (señales Buy/Sell y PnL simple).
-- ⚙️ Parámetros ajustables (ticker, fechas, intervalo).
-- 💻 UI 100% web con **Streamlit**.
+## ¿Qué puedo hacer con QuantBoard?
+- Ver el **gráfico de precio** (OHLC) con overlays de SMA/EMA/Bollinger y panel de **RSI**.
+- Generar **señales** con estrategias simples listas para usar.
+- Correr un **backtest** rápido y ver métricas clave (CAGR, Sharpe, MaxDD).
+- Explorar parámetros de SMA con un **heatmap** (grid search).
 
 ---
 
 ## Requisitos
-- Python **3.10+**
+- **Python 3.10+**
 - Dependencias en `requirements.txt`
 
 ---
 
-## Cómo correrlo (3 pasos)
-
+## Cómo correrlo (Windows / macOS / Linux)
 ```bash
 # 1) Clonar
 git clone https://github.com/felipeimpieri/quantboard.git
 cd quantboard
 
-# 2) Entorno e instalaciones
+# 2) Crear y activar entorno
 # Windows (PowerShell)
 py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-# macOS/Linux
+
+# macOS / Linux
 python3 -m venv .venv
 source .venv/bin/activate
 
+# 3) Instalar dependencias e iniciar
 python -m pip install --upgrade pip
 pip install -r requirements.txt
-
-# 3) Iniciar
 python -m streamlit run streamlit_app.py
