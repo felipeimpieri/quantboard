@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import date, timedelta
 from plotly import graph_objs as go
+import time
 
 # QuantBoard package
 from quantboard.data import get_prices
@@ -24,7 +25,8 @@ st.sidebar.header("Configuración")
 ticker = st.sidebar.text_input("Ticker", value="AAPL")
 end = st.sidebar.date_input("Hasta", value=date.today())
 start = st.sidebar.date_input("Desde", value=date.today() - timedelta(days=365))
-interval = st.sidebar.selectbox("Intervalo", options=["1d", "1wk", "1mo"], index=0)
+interval = st.sidebar.selectbox("Intervalo", options=["1m", "1d", "1wk", "1mo"], index=1)
+auto_refresh = st.sidebar.checkbox("Auto-refrescar 1m", value=False)
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Indicadores")
@@ -63,7 +65,7 @@ st.title("QuantBoard — Análisis técnico y Backtesting")
 st.info("Configurá a la izquierda y apretá **Ejecutar** para empezar.")
 
 # --- Main run ---
-if run_btn:
+if run_btn or auto_refresh:
     with st.spinner("Descargando datos..."):
         df = get_prices(ticker, start=start, end=end, interval=interval)
         df = df.dropna()
@@ -111,6 +113,10 @@ if run_btn:
     eq_fig = go.Figure(go.Scatter(x=bt.index, y=bt["equity"], mode="lines", name="Equity"))
     eq_fig.update_layout(title="Curva de equity")
     st.plotly_chart(eq_fig, use_container_width=True)
+
+    if auto_refresh and interval == "1m":
+        time.sleep(60)
+        st.experimental_rerun()
 
 # --- Optimization grid ---
 if opt_btn:

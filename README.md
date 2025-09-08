@@ -12,7 +12,7 @@ Dashboard interactivo hecho con **Streamlit + yfinance + Plotly** para analizar 
 ---
 
 ## ¿Qué puedo hacer con QuantBoard?
-- Ver el **gráfico de precio** (OHLC) con overlays de SMA/EMA/Bollinger y panel de **RSI**.
+- Ver el **gráfico de precio** (OHLC) con overlays de SMA/EMA/Bollinger y panel de **RSI**. Ahora también soporta datos intradiarios de 1 minuto con auto-refresco opcional.
 - Generar **señales** con estrategias simples listas para usar.
 - Correr un **backtest** rápido y ver métricas clave (CAGR, Sharpe, MaxDD).
 - Explorar parámetros de SMA con un **heatmap** (grid search).
