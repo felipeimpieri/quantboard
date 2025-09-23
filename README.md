@@ -7,6 +7,10 @@ Dashboard interactivo hecho con **Streamlit + yfinance + Plotly** para analizar 
 > - Estrategias de señales: **SMA crossover**, **RSI thresholds**, **Bollinger mean-reversion**, **Donchian breakout**.
 > - Backtest con métricas: **CAGR**, **Sharpe**, **Max Drawdown**.
 > - **Grid search** de SMA (heatmap) para explorar combinaciones *fast/slow*.
+> - Aplicación dividida en páginas (`pages/`) para análisis y optimización.
+> - Página **Watchlist** para seguir tickers y abrirlos en Home.
+> - Página **SMA Heatmap** para probar rangos de SMA rápida/lenta y enviar el ticker al Home.
+> - Página **Backtest SMA** con métricas, curva de equity y señales sobre el precio.
 > - Limpieza de estructura de paquete (`quantboard/…`) y `.gitignore`.
 
 ---
@@ -15,7 +19,9 @@ Dashboard interactivo hecho con **Streamlit + yfinance + Plotly** para analizar 
 - Ver el **gráfico de precio** (OHLC) con overlays de SMA/EMA/Bollinger y panel de **RSI**. Ahora también soporta datos intradiarios de 1 minuto con auto-refresco opcional.
 - Generar **señales** con estrategias simples listas para usar.
 - Correr un **backtest** rápido y ver métricas clave (CAGR, Sharpe, MaxDD).
+- Visualizar **señales y curva de equity** del crossover de SMA en una página dedicada de backtesting.
 - Explorar parámetros de SMA con un **heatmap** (grid search).
+- Gestionar una **watchlist** con últimos precios y variación 30d.
 
 ---
 
