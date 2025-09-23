@@ -38,44 +38,98 @@ def price_chart(df: pd.DataFrame, overlays: dict | None = None) -> go.Figure:
     fig.update_layout(margin=dict(l=40, r=20, t=40, b=40))
     return fig
 
-def fig_price(df: pd.DataFrame, overlays: dict | None = None) -> go.Figure:
-    """Wrapper around :func:`price_chart` that tolerates lowercase OHLC columns."""
+def fig_price(
+    df: pd.DataFrame,
+    overlays: dict[str, pd.Series | pd.DataFrame] | None = None,
+    close_col: str = "close",
+) -> go.Figure:
+    """Plot price information as candlesticks or a line with optional overlays.
+
+    Parameters
+    ----------
+    df
+        DataFrame containing either OHLC columns or, at minimum, a ``close`` column.
+    overlays
+        Optional mapping of overlay names to time-series that will be plotted as
+        additional lines on top of the price series.
+    close_col
+        Column name to use for closing prices when drawing a line chart.
+    """
+
+    fig = go.Figure()
 
     if df is None or df.empty:
-        return go.Figure()
+        fig.update_layout(
+            margin=dict(l=40, r=20, t=40, b=40),
+            height=600,
+            xaxis_title="Fecha",
+            yaxis_title="Precio",
+        )
+        return fig
+
+    data = df.copy()
+    data.index = pd.to_datetime(data.index)
 
     overlays = overlays or {}
 
-    rename_map: dict[str, str] = {}
-    for col in df.columns:
-        lower = col.lower()
-        if lower in {"open", "high", "low", "close"}:
-            rename_map[col] = lower.capitalize()
+    column_lookup = {col.lower(): col for col in data.columns}
+    required_ohlc = {"open", "high", "low", "close"}
+    has_ohlc = required_ohlc.issubset(column_lookup.keys())
+    close_key = column_lookup.get(close_col.lower(), close_col)
 
-    normalized = df.rename(columns=rename_map).copy()
+    if has_ohlc:
+        fig.add_trace(
+            go.Candlestick(
+                x=data.index,
+                open=data[column_lookup["open"]],
+                high=data[column_lookup["high"]],
+                low=data[column_lookup["low"]],
+                close=data[column_lookup["close"]],
+                name="OHLC",
+            )
+        )
+    elif close_key in data.columns:
+        fig.add_trace(
+            go.Scatter(
+                x=data.index,
+                y=data[close_key],
+                mode="lines",
+                name="Close",
+            )
+        )
+    else:
+        raise ValueError("El DataFrame debe incluir columnas OHLC o una columna de cierre válida.")
 
-    required = {"Open", "High", "Low", "Close"}
-    if not required.issubset(normalized.columns):
-        missing = ", ".join(sorted(required - set(normalized.columns)))
-        raise ValueError(f"Missing OHLC columns for fig_price: {missing}")
+    for name, series in overlays.items():
+        if series is None:
+            continue
+        if isinstance(series, pd.DataFrame):
+            for sub_name, ser in series.items():
+                cleaned = ser.copy()
+                cleaned.index = pd.to_datetime(cleaned.index)
+                fig.add_trace(
+                    go.Scatter(
+                        x=cleaned.index,
+                        y=cleaned.values,
+                        mode="lines",
+                        name=f"{name} ({sub_name})",
+                    )
+                )
+            continue
 
-    normalized = normalized[["Open", "High", "Low", "Close"]]
-    normalized.index = pd.to_datetime(normalized.index)
+        ser = series.copy()
+        ser.index = pd.to_datetime(ser.index)
+        fig.add_trace(
+            go.Scatter(x=ser.index, y=ser.values, mode="lines", name=name)
+        )
 
-    cleaned_overlays: dict[str, pd.Series | pd.DataFrame] = {}
-    for key, value in overlays.items():
-        if isinstance(value, pd.Series):
-            ser = value.copy()
-            ser.index = pd.to_datetime(ser.index)
-            cleaned_overlays[key] = ser
-        elif isinstance(value, pd.DataFrame):
-            df_value = value.copy()
-            df_value.index = pd.to_datetime(df_value.index)
-            cleaned_overlays[key] = df_value
-        else:
-            cleaned_overlays[key] = value
-
-    return price_chart(normalized, cleaned_overlays)
+    fig.update_layout(
+        margin=dict(l=40, r=20, t=40, b=40),
+        height=600,
+        xaxis_title="Fecha",
+        yaxis_title="Precio",
+    )
+    return fig
 
 
 def heatmap_metric(z_df: pd.DataFrame, title: str = "SMA grid (metric)") -> go.Figure:
