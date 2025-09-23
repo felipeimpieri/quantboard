@@ -2,7 +2,7 @@ import pandas as pd
 import yfinance as yf
 try:
     import streamlit as st
-    cache = st.cache_data(show_spinner=False, ttl=60*10)
+    cache = st.cache_data(show_spinner=False, ttl=60)
 except Exception:
     # fallback no-cache when not running in Streamlit
     def _no_cache(func):
