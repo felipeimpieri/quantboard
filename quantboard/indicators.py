@@ -6,15 +6,16 @@ def sma(series: pd.Series, window: int = 20) -> pd.Series:
     return series.rolling(window).mean().rename(f"SMA_{window}")
 
 # --- Relative Strength Index (Wilder) ---
-def rsi(series: pd.Series, period: int = 14) -> pd.Series:
+def rsi(series: pd.Series, window: int | None = None, period: int = 14) -> pd.Series:
+    win = window if window is not None else period
     delta = series.diff()
     up = delta.clip(lower=0)
     down = -delta.clip(upper=0)
-    roll_up = up.ewm(alpha=1/period, adjust=False).mean()
-    roll_down = down.ewm(alpha=1/period, adjust=False).mean()
+    roll_up = up.ewm(alpha=1 / win, adjust=False).mean()
+    roll_down = down.ewm(alpha=1 / win, adjust=False).mean()
     rs = roll_up / roll_down
     out = 100 - 100 / (1 + rs)
-    return out.rename(f"RSI_{period}")
+    return out.rename(f"RSI_{win}")
 
 # --- Exponential Moving Average ---
 def ema(series: pd.Series, window: int = 20) -> pd.Series:
