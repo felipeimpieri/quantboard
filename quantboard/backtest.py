@@ -4,8 +4,37 @@ from __future__ import annotations
 
 import pandas as pd
 
+from .indicators import sma
 from .utils import periods_per_year, compute_cagr, compute_sharpe, max_drawdown
-from .strategies import signals_sma_crossover
+
+
+def sma_crossover_signals(
+    close: pd.Series, fast: int, slow: int
+) -> tuple[pd.Series, dict[str, pd.Series]]:
+    """Genera señal binaria de cruce de medias móviles simples.
+
+    Parameters
+    ----------
+    close
+        Serie de precios de cierre.
+    fast
+        Ventana para la SMA rápida.
+    slow
+        Ventana para la SMA lenta.
+
+    Returns
+    -------
+    tuple
+        Serie con la señal (1 cuando la SMA rápida está por encima de la lenta)
+        y un diccionario con las SMA calculadas para usarlas como overlays.
+    """
+
+    fast_sma = sma(close, fast)
+    slow_sma = sma(close, slow)
+    signal = (fast_sma > slow_sma).astype(float)
+    signal.name = "signal"
+    overlays = {"SMA_fast": fast_sma, "SMA_slow": slow_sma}
+    return signal, overlays
 
 
 def run_backtest(
@@ -69,11 +98,11 @@ def sma_crossover_metrics(
         Métricas calculadas (CAGR, Sharpe, MaxDD).
     """
 
-    sig, _ = signals_sma_crossover(close, fast=fast, slow=slow)
+    sig, _ = sma_crossover_signals(close, fast=fast, slow=slow)
     df = pd.DataFrame({"Close": close})
     _, metrics = run_backtest(df, sig, interval=interval)
     return metrics
 
 
-__all__ = ["run_backtest", "sma_crossover_metrics"]
+__all__ = ["sma_crossover_signals", "run_backtest", "sma_crossover_metrics"]
 
