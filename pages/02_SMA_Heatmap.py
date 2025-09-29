@@ -28,10 +28,18 @@ if calc_btn:
     end = date.today()
     with st.spinner("Descargando datos..."):
         df = get_prices(ticker, start=start, end=end, interval="1d")
-        close = df["Close"].dropna()
+
+    if df.empty:
+        st.error("No se pudieron obtener datos históricos para el ticker seleccionado.")
+        st.stop()
+
+    close = df.get("close")
+    if close is None or close.dropna().empty:
+        st.error("Los datos descargados no contienen precios de cierre válidos.")
+        st.stop()
 
     z = sma_grid_heatmap(
-        close,
+        close.dropna(),
         fast_range=range(int(fmin), int(fmax) + 1),
         slow_range=range(int(smin), int(smax) + 1),
         metric=metric,
@@ -45,8 +53,9 @@ if calc_btn:
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    if not z.stack().empty:
-        (best_fast, best_slow) = z.stack().idxmax()
+    stacked = z.stack(dropna=True)
+    if not stacked.empty:
+        (best_fast, best_slow) = stacked.idxmax()
         best_val = z.loc[best_fast, best_slow]
         st.success(
             f"Mejor {metric}: {best_val:.4f} con SMA rápida {best_fast} y lenta {best_slow}"

@@ -50,7 +50,12 @@ def run_backtest(
 ):
     """Backtest simple con señal 1/-1/0. Devuelve ``(result_df, metrics_dict)``."""
 
-    prices = df["Close"].astype(float)
+    data = df.copy()
+    if not data.columns.empty:
+        data = data.rename(columns=str.lower)
+    if "close" not in data.columns:
+        raise KeyError("El DataFrame de precios debe incluir la columna 'close'.")
+    prices = data["close"].astype(float)
     sig = sig.fillna(0).astype(float)
 
     # Entramos en la barra siguiente
@@ -99,7 +104,7 @@ def sma_crossover_metrics(
     """
 
     sig, _ = sma_crossover_signals(close, fast=fast, slow=slow)
-    df = pd.DataFrame({"Close": close})
+    df = pd.DataFrame({"close": close})
     _, metrics = run_backtest(df, sig, interval=interval)
     return metrics
 

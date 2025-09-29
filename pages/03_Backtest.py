@@ -55,12 +55,15 @@ if run_btn:
                 prices = pd.DataFrame()
 
             if error_msg is None and not prices.empty:
-                close = prices.get("Close", pd.Series(dtype=float)).dropna()
-                if close.empty:
-                    error_msg = "No se encontraron precios de cierre para el ticker." 
+                if "close" not in prices.columns:
+                    error_msg = "Los datos descargados no contienen precios de cierre."
                 else:
-                    signal, overlays = sma_crossover_signals(close, fast=int(fast), slow=int(slow))
-                    bt, metrics = run_backtest(prices.loc[close.index], signal, interval=interval)
+                    close = prices["close"].dropna()
+                    if close.empty:
+                        error_msg = "No se encontraron precios de cierre para el ticker."
+                    else:
+                        signal, overlays = sma_crossover_signals(close, fast=int(fast), slow=int(slow))
+                        bt, metrics = run_backtest(prices.loc[close.index], signal, interval=interval)
 
         if error_msg:
             st.error(error_msg)
@@ -72,10 +75,10 @@ if run_btn:
             fig.add_trace(
                 go.Candlestick(
                     x=prices.index,
-                    open=prices["Open"],
-                    high=prices["High"],
-                    low=prices["Low"],
-                    close=prices["Close"],
+                    open=prices["open"],
+                    high=prices["high"],
+                    low=prices["low"],
+                    close=prices["close"],
                     name="Precio",
                 )
             )
@@ -101,7 +104,7 @@ if run_btn:
                 fig.add_trace(
                     go.Scatter(
                         x=buy_idx,
-                        y=prices.loc[buy_idx, "Close"],
+                        y=prices.loc[buy_idx, "close"],
                         mode="markers",
                         name="Buy",
                         marker=dict(symbol="triangle-up", color="#16a34a", size=10),
@@ -111,7 +114,7 @@ if run_btn:
                 fig.add_trace(
                     go.Scatter(
                         x=sell_idx,
-                        y=prices.loc[sell_idx, "Close"],
+                        y=prices.loc[sell_idx, "close"],
                         mode="markers",
                         name="Sell",
                         marker=dict(symbol="triangle-down", color="#dc2626", size=10),

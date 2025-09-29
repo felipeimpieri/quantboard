@@ -6,13 +6,23 @@ def price_chart(df: pd.DataFrame, overlays: dict | None = None) -> go.Figure:
     overlays = overlays or {}
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3])
 
-    # OHLC
+    lookup = {col.lower(): col for col in df.columns}
+    open_col = lookup.get("open", "open")
+    high_col = lookup.get("high", "high")
+    low_col = lookup.get("low", "low")
+    close_col = lookup.get("close", "close")
+
     fig.add_trace(
         go.Candlestick(
             x=df.index,
-            open=df["Open"], high=df["High"], low=df["Low"], close=df["Close"], name="OHLC"
+            open=df[open_col],
+            high=df[high_col],
+            low=df[low_col],
+            close=df[close_col],
+            name="OHLC",
         ),
-        row=1, col=1,
+        row=1,
+        col=1,
     )
 
     # Overlays: SMAs/EMA

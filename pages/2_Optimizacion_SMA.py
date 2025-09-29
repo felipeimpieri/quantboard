@@ -31,8 +31,12 @@ opt_btn = st.sidebar.button("Optimizar grid", type="primary")
 if opt_btn:
     with st.spinner("Buscando parámetros (SMA grid)..."):
         df = get_prices(ticker, start=start, end=end, interval=interval)
+        close = df.get("close") if not df.empty else None
+        if close is None or close.dropna().empty:
+            st.error("No se pudieron obtener precios de cierre válidos para el ticker.")
+            st.stop()
         z = grid_search_sma(
-            df["Close"],
+            close.dropna(),
             fast_range=range(int(fast_min), int(fast_max) + 1),
             slow_range=range(int(slow_min), int(slow_max) + 1),
             fee_bps=int(fee_bps),

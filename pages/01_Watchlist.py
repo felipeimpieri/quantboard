@@ -37,9 +37,12 @@ if watchlist:
         end = datetime.today().strftime("%Y-%m-%d")
         for tick in tickers:
             df = get_prices(tick, start, end, interval="1d")
-            if not df.empty:
-                last_price = df["Close"].iloc[-1]
-                pct_30d = (last_price / df["Close"].iloc[0] - 1) * 100
+            if not df.empty and "close" in df.columns:
+                close = df["close"].astype(float)
+                if close.dropna().empty:
+                    continue
+                last_price = close.iloc[-1]
+                pct_30d = (last_price / close.iloc[0] - 1) * 100 if close.iloc[0] != 0 else 0.0
                 rows.append({"Ticker": tick, "Último precio": last_price, "% 30d": pct_30d})
         return pd.DataFrame(rows)
 

@@ -12,13 +12,22 @@ except Exception:
 @cache
 def get_prices(ticker: str, start: str, end: str, interval: str = "1d") -> pd.DataFrame:
     try:
-        df = yf.download(ticker, start=start, end=end, interval=interval, auto_adjust=True, progress=False)
+        df = yf.download(
+            ticker,
+            start=start,
+            end=end,
+            interval=interval,
+            auto_adjust=True,
+            progress=False,
+        )
         if isinstance(df.columns, pd.MultiIndex):
             # If multiple tickers accidentally passed, keep first level if present
             try:
                 df = df.xs(ticker, axis=1, level=1)
             except Exception:
                 df = df.droplevel(0, axis=1)
+        df = df.rename(columns=str.lower)
+        df.index = pd.to_datetime(df.index)
         df = df.dropna()
         return df
     except Exception:
