@@ -18,7 +18,7 @@ def signals_sma_crossover(close: pd.Series, fast: int = 20, slow: int = 50, allo
     return sig, overlays
 
 def signals_rsi(close: pd.Series, period: int = 14, lower: int = 30, upper: int = 70):
-    r = rsi(close, period)
+    r = rsi(close, window=period)
     buy = (r.shift(1) < lower) & (r >= lower)
     sell = (r.shift(1) > upper) & (r <= upper)
     sig = pd.Series(0.0, index=close.index)
