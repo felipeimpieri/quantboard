@@ -1,113 +1,88 @@
-"""Backtesting utilities for QuantBoard."""
-
 from __future__ import annotations
 
+from dataclasses import dataclass
+import numpy as np
 import pandas as pd
 
-from .indicators import sma
-from .utils import periods_per_year, compute_cagr, compute_sharpe, max_drawdown
+
+@dataclass
+class BTResult:
+    equity: pd.Series
+    returns: pd.Series
 
 
-def sma_crossover_signals(
-    close: pd.Series, fast: int, slow: int
-) -> tuple[pd.Series, dict[str, pd.Series]]:
-    """Genera señal binaria de cruce de medias móviles simples.
+def _periods_per_year(interval: str) -> float:
+    interval = (interval or "").lower()
+    if interval == "1d":
+        return 252.0
+    if interval == "1wk":
+        return 52.0
+    if interval == "1mo":
+        return 12.0
+    if interval == "1h":
+        return 252.0 * 6.5  # ~horas de mercado por año
+    if interval == "1m":
+        return 252.0 * 390.0  # ~minutos de mercado por año
+    return 252.0
 
-    Parameters
-    ----------
-    close
-        Serie de precios de cierre.
-    fast
-        Ventana para la SMA rápida.
-    slow
-        Ventana para la SMA lenta.
 
-    Returns
-    -------
-    tuple
-        Serie con la señal (1 cuando la SMA rápida está por encima de la lenta)
-        y un diccionario con las SMA calculadas para usarlas como overlays.
-    """
+def _max_drawdown(equity: pd.Series) -> float:
+    roll_max = equity.cummax()
+    dd = equity / roll_max - 1.0
+    return float(dd.min()) if len(dd) else 0.0
 
-    fast_sma = sma(close, fast)
-    slow_sma = sma(close, slow)
-    signal = (fast_sma > slow_sma).astype(float)
-    signal.name = "signal"
-    overlays = {"SMA_fast": fast_sma, "SMA_slow": slow_sma}
-    return signal, overlays
+
+def _cagr(equity: pd.Series, periods_per_year: float) -> float:
+    if equity.empty:
+        return 0.0
+    n_periods = float(len(equity))
+    years = n_periods / periods_per_year if periods_per_year > 0 else 1.0
+    endv = float(equity.iloc[-1])
+    return (endv ** (1.0 / years) - 1.0) if years > 0 and endv > 0 else 0.0
+
+
+def _sharpe(rets: pd.Series, periods_per_year: float) -> float:
+    if rets.std(ddof=0) == 0 or len(rets) == 0:
+        return 0.0
+    return float(rets.mean() / rets.std(ddof=0) * np.sqrt(periods_per_year))
 
 
 def run_backtest(
     df: pd.DataFrame,
-    sig: pd.Series,
+    signals: pd.Series,
+    *,
     fee_bps: int = 0,
     slippage_bps: int = 0,
     interval: str = "1d",
-    stop_atr: float | None = None,  # aceptados pero no usados aún
-    tp_atr: float | None = None,
-    atr_length: int = 14,
-    **kwargs,
-):
-    """Backtest simple con señal 1/-1/0. Devuelve ``(result_df, metrics_dict)``."""
-
-    data = df.copy()
-    if not data.columns.empty:
-        data = data.rename(columns=str.lower)
-    if "close" not in data.columns:
-        raise KeyError("El DataFrame de precios debe incluir la columna 'close'.")
-    prices = data["close"].astype(float)
-    sig = sig.fillna(0).astype(float)
-
-    # Entramos en la barra siguiente
-    pos = sig.shift(1).fillna(0)
-    ret = prices.pct_change().fillna(0)
-
-    gross = pos * ret
-    turnover = pos.diff().abs().fillna(0)
-    total_bps = (fee_bps or 0) + (slippage_bps or 0)
-    fee = turnover * (total_bps / 10000.0)
-    pnl = gross - fee
-
-    equity = (1 + pnl).cumprod()
-    ppy = periods_per_year(interval)
-    metrics = {
-        "CAGR": compute_cagr(equity, ppy),
-        "Sharpe": compute_sharpe(pnl, ppy),
-        "MaxDD": max_drawdown(equity),
-    }
-    out = pd.DataFrame(
-        {"price": prices, "signal": pos, "ret": ret, "pnl": pnl, "equity": equity}
-    )
-    return out, metrics
-
-
-def sma_crossover_metrics(
-    close: pd.Series, fast: int, slow: int, interval: str = "1d"
-) -> dict:
-    """Ejecuta un backtest de SMA crossover y devuelve métricas.
-
-    Parameters
-    ----------
-    close : pd.Series
-        Serie de precios de cierre.
-    fast : int
-        Ventana de la SMA rápida.
-    slow : int
-        Ventana de la SMA lenta.
-    interval : str
-        Intervalo temporal (por defecto ``"1d"``).
-
-    Returns
-    -------
-    dict
-        Métricas calculadas (CAGR, Sharpe, MaxDD).
+) -> tuple[pd.DataFrame, dict]:
     """
+    Backtest long/short con señales en {-1, 0, 1}.
+    Costos aplicados en cada cambio de posición (fee + slippage en bps).
+    Devuelve DataFrame con 'equity' y dict de métricas: CAGR, Sharpe, MaxDD.
+    """
+    data = df.copy()
+    for c in ("open", "high", "low", "close"):
+        if c not in data.columns and "Close" in data.columns:
+            # por compat - ya normalizamos en capas superiores
+            data[c] = pd.to_numeric(data["Close"], errors="coerce")
+    close = pd.to_numeric(data["close"], errors="coerce").fillna(method="ffill")
+    rets = close.pct_change().fillna(0.0)
 
-    sig, _ = sma_crossover_signals(close, fast=fast, slow=slow)
-    df = pd.DataFrame({"close": close})
-    _, metrics = run_backtest(df, sig, interval=interval)
-    return metrics
+    pos = pd.Series(signals, index=close.index).replace([np.inf, -np.inf], np.nan).ffill().fillna(0.0)
+    pos = pos.clip(-1, 1)
 
+    # Costos por cambio de posición
+    turn = pos.diff().abs().fillna(0.0)  # 0->1, 1->-1, etc.
+    cost = turn * ((fee_bps + slippage_bps) / 10000.0)
 
-__all__ = ["sma_crossover_signals", "run_backtest", "sma_crossover_metrics"]
+    strat_rets = pos.shift(1).fillna(0.0) * rets - cost
+    equity = (1.0 + strat_rets).cumprod()
+    res_df = pd.DataFrame({"equity": equity, "returns": strat_rets})
 
+    ppy = _periods_per_year(interval)
+    metrics = {
+        "CAGR": _cagr(equity, ppy),
+        "Sharpe": _sharpe(strat_rets, ppy),
+        "MaxDD": _max_drawdown(equity),
+    }
+    return res_df, metrics
