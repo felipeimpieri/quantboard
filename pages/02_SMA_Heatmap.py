@@ -1,98 +1,74 @@
-"""SMA heatmap optimisation page."""
+# pages/02_SMA_Heatmap.py
+"""SMA Heatmap — grid search for fast/slow SMA parameters."""
+
 from __future__ import annotations
-
-from datetime import date, timedelta
-
+from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
 
 from quantboard.data import get_prices
 from quantboard.optimize import grid_search_sma
 from quantboard.plots import heatmap_metric
-from quantboard.ui.theme import apply_global_theme
 
 st.set_page_config(page_title="SMA Heatmap", page_icon="🔥", layout="wide")
-apply_global_theme()
+st.title("SMA Heatmap")
 
+with st.sidebar:
+    st.header("Parameters")
+    ticker = st.text_input("Ticker", value="AAPL").strip().upper()
 
-def _validate_prices(df: pd.DataFrame) -> pd.Series | None:
-    """Return a cleaned *close* series or ``None`` when empty."""
+    st.subheader("Ranges")
+    fast_min, fast_max = st.slider("Fast SMA range", min_value=5, max_value=60, value=(10, 30))
+    slow_min, slow_max = st.slider("Slow SMA range", min_value=20, max_value=200, value=(50, 120))
+
+    calc_btn = st.button("Calculate", type="primary")
+
+st.info("Pick ranges and press **Calculate**. Only valid pairs with fast < slow are considered.")
+
+if calc_btn:
+    with st.spinner("Downloading data..."):
+        end = datetime.today().date()
+        start = (datetime.today() - timedelta(days=365)).date()
+        df = get_prices(ticker, start=start, end=end, interval="1d")
+
     if df.empty or "close" not in df.columns:
-        st.error("No data for the selected range/interval.")
-        return None
+        st.error("No data for the selected range/interval or missing 'close' column.")
+        st.stop()
 
     close = pd.to_numeric(df["close"], errors="coerce").dropna()
     if close.empty:
-        st.error("No data for the selected range/interval.")
-        return None
+        st.error("No valid closing prices to compute the grid.")
+        st.stop()
 
-    return close
+    fast_rng = range(int(fast_min), int(fast_max) + 1)
+    slow_rng = range(int(slow_min), int(slow_max) + 1)
 
+    z = grid_search_sma(
+        close,
+        fast_range=fast_rng,
+        slow_range=slow_rng,
+        metric="Sharpe",
+    )
 
-@st.cache_data(ttl=60)
-def _load_prices(ticker: str, start: date, end: date) -> pd.DataFrame:
-    return get_prices(ticker, start=start, end=end, interval="1d")
+    # blank fast>=slow
+    z = z.copy()
+    for f in list(z.index):
+        for s in list(z.columns):
+            if f >= s:
+                z.loc[f, s] = float("nan")
 
+    st.subheader("Sharpe heatmap")
+    fig = heatmap_metric(z, title=f"{ticker} — SMA Grid (Sharpe)")
+    st.plotly_chart(fig, use_container_width=True)
 
-def main() -> None:
-    st.title("🔥 SMA Heatmap")
+    c1, c2 = st.columns([3, 1])
+    with c1:
+        st.caption("Higher is better. Hover cells to inspect the pair.")
+    with c2:
+        if st.button("Open in Home"):
+            st.experimental_set_query_params(ticker=ticker)
+            try:
+                st.switch_page("streamlit_app.py")
+            except Exception:
+                st.success("Ticker set on Home. Go back to the main page from the menu.")
 
-    with st.sidebar:
-        st.header("Parameters")
-        with st.form("heatmap_form"):
-            ticker = st.text_input("Ticker", value="AAPL").strip().upper()
-            end = st.date_input("To", value=date.today())
-            start = st.date_input("From", value=date.today() - timedelta(days=365 * 2))
-            fast_min, fast_max = st.slider("Fast SMA range", 5, 60, (10, 25))
-            slow_min, slow_max = st.slider("Slow SMA range", 20, 240, (50, 120))
-            submitted = st.form_submit_button("Run search", type="primary")
-
-    if not submitted:
-        st.info("Choose parameters and click **Run search**.")
-        return
-
-    if fast_min >= slow_min:
-        st.error("Fast SMA range must stay below the Slow SMA range.")
-        return
-
-    with st.spinner("Fetching data..."):
-        df = _load_prices(ticker, start=start, end=end)
-
-    close = _validate_prices(df)
-    if close is None:
-        return
-
-    with st.spinner("Scanning for optimal combinations..."):
-        z = grid_search_sma(
-            close,
-            fast_range=range(int(fast_min), int(fast_max) + 1),
-            slow_range=range(int(slow_min), int(slow_max) + 1),
-            metric="Sharpe",
-        )
-
-    # Invalidate combinations where fast >= slow
-    for fast_window in z.index:
-        for slow_window in z.columns:
-            if int(fast_window) >= int(slow_window):
-                z.loc[fast_window, slow_window] = float("nan")
-
-    st.subheader("Heatmap (Sharpe)")
-    st.plotly_chart(heatmap_metric(z, title="SMA grid — Sharpe"), use_container_width=True)
-
-    stacked = z.stack().dropna().astype(float)
-    if stacked.empty:
-        st.warning("No valid combination found in the selected range.")
-        return
-
-    f_best, s_best = map(int, stacked.idxmax())
-    st.success(f"Best combo: **Fast SMA {f_best} / Slow SMA {s_best}**")
-
-    if st.button("Use in Home"):
-        st.experimental_set_query_params(ticker=ticker)
-        try:
-            st.switch_page("streamlit_app.py")
-        except Exception:  # pragma: no cover - depends on Streamlit runtime
-            st.info("Open Home from the menu; the ticker was set.")
-
-
-main()
