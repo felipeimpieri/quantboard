@@ -1,6 +1,35 @@
-﻿from plotly.subplots import make_subplots
+"""Plot helpers for QuantBoard visualisations."""
+from __future__ import annotations
+
+from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 import pandas as pd
+
+
+THEME_COLORWAY = [
+    "#F97316",
+    "#34D399",
+    "#F87171",
+    "#60A5FA",
+    "#FBBF24",
+    "#A78BFA",
+]
+
+
+def apply_plotly_theme(fig: go.Figure) -> go.Figure:
+    """Apply the QuantBoard Plotly styling to a figure."""
+
+    fig.update_layout(
+        template="plotly_dark",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="#0F1115",
+        font=dict(color="#E5E7EB"),
+        colorway=THEME_COLORWAY,
+    )
+    fig.update_xaxes(gridcolor="#2A2F37", zeroline=False)
+    fig.update_yaxes(gridcolor="#2A2F37", zeroline=False)
+    return fig
+
 
 def price_chart(df: pd.DataFrame, overlays: dict | None = None) -> go.Figure:
     overlays = overlays or {}
@@ -33,9 +62,9 @@ def price_chart(df: pd.DataFrame, overlays: dict | None = None) -> go.Figure:
 
     # Bollinger
     bb = overlays.get("BB")
-    if isinstance(bb, pd.DataFrame) and {"BB_upper","BB_mid","BB_lower"}.issubset(bb.columns):
+    if isinstance(bb, pd.DataFrame) and {"BB_upper", "BB_mid", "BB_lower"}.issubset(bb.columns):
         fig.add_trace(go.Scatter(x=bb.index, y=bb["BB_upper"], mode="lines", name="BB_upper"), row=1, col=1)
-        fig.add_trace(go.Scatter(x=bb.index, y=bb["BB_mid"],   mode="lines", name="BB_mid"),   row=1, col=1)
+        fig.add_trace(go.Scatter(x=bb.index, y=bb["BB_mid"], mode="lines", name="BB_mid"), row=1, col=1)
         fig.add_trace(go.Scatter(x=bb.index, y=bb["BB_lower"], mode="lines", name="BB_lower"), row=1, col=1)
 
     # RSI
@@ -46,25 +75,15 @@ def price_chart(df: pd.DataFrame, overlays: dict | None = None) -> go.Figure:
         fig.add_hline(y=30, line_dash="dot", row=2, col=1)
 
     fig.update_layout(margin=dict(l=40, r=20, t=40, b=40))
-    return fig
+    return apply_plotly_theme(fig)
+
 
 def fig_price(
     df: pd.DataFrame,
     overlays: dict[str, pd.Series | pd.DataFrame] | None = None,
     close_col: str = "close",
 ) -> go.Figure:
-    """Plot price information as candlesticks or a line with optional overlays.
-
-    Parameters
-    ----------
-    df
-        DataFrame containing either OHLC columns or, at minimum, a ``close`` column.
-    overlays
-        Optional mapping of overlay names to time-series that will be plotted as
-        additional lines on top of the price series.
-    close_col
-        Column name to use for closing prices when drawing a line chart.
-    """
+    """Plot price information as candlesticks or a line with optional overlays."""
 
     fig = go.Figure()
 
@@ -72,10 +91,10 @@ def fig_price(
         fig.update_layout(
             margin=dict(l=40, r=20, t=40, b=40),
             height=600,
-            xaxis_title="Fecha",
-            yaxis_title="Precio",
+            xaxis_title="Date",
+            yaxis_title="Price",
         )
-        return fig
+        return apply_plotly_theme(fig)
 
     data = df.copy()
     data.index = pd.to_datetime(data.index)
@@ -108,7 +127,7 @@ def fig_price(
             )
         )
     else:
-        raise ValueError("El DataFrame debe incluir columnas OHLC o una columna de cierre válida.")
+        raise ValueError("DataFrame must include OHLC columns or a valid close column.")
 
     for name, series in overlays.items():
         if series is None:
@@ -136,15 +155,24 @@ def fig_price(
     fig.update_layout(
         margin=dict(l=40, r=20, t=40, b=40),
         height=600,
-        xaxis_title="Fecha",
-        yaxis_title="Precio",
+        xaxis_title="Date",
+        yaxis_title="Price",
     )
-    return fig
+    return apply_plotly_theme(fig)
 
 
 def heatmap_metric(z_df: pd.DataFrame, title: str = "SMA grid (metric)") -> go.Figure:
-    fig = go.Figure(data=go.Heatmap(z=z_df.values, x=z_df.columns, y=z_df.index, colorbar=dict(title="Metric")))
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=z_df.values,
+            x=z_df.columns,
+            y=z_df.index,
+            colorbar=dict(title="Metric"),
+            hovertemplate="Fast %{y}<br>Slow %{x}<br>Value %{z:.4f}<extra></extra>",
+        )
+    )
     fig.update_layout(title=title, xaxis_title="Slow", yaxis_title="Fast")
-    return fig
+    return apply_plotly_theme(fig)
 
-__all__ = ["price_chart", "heatmap_metric", "fig_price"]
+
+__all__ = ["price_chart", "heatmap_metric", "fig_price", "apply_plotly_theme"]

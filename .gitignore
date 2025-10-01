@@ -9,6 +9,8 @@ dist/
 build/
 *.egg-info/
 .streamlit/
+!.streamlit/
+!.streamlit/config.toml
 .vscode/
 .DS_Store
 Thumbs.db
