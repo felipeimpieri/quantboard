@@ -9,10 +9,13 @@ import streamlit as st
 
 from quantboard.data import get_prices
 from quantboard.indicators import sma, rsi
+from quantboard.plots import apply_plotly_theme
+from quantboard.ui.theme import apply_global_theme
 
 st.set_page_config(page_title="QuantBoard", page_icon="📈", layout="wide")
+apply_global_theme()
 
-# --- Autorefresco (cada 60s) para intervalo 1m ---
+# --- Auto-refresh (every 60s) for 1m interval ---
 def _autorefresh_if_needed(enabled: bool, interval: str) -> None:
     if not enabled or interval != "1m":
         return
@@ -34,35 +37,35 @@ def fetch_prices_cached(ticker: str, start: date | datetime, end: date | datetim
     return df.dropna()
 
 def main() -> None:
-    st.title("QuantBoard — Análisis técnico en tiempo real")
-    st.caption("Configurá la barra lateral y obtené precios/indicadores. **Intradía 1m** con **auto-refresco de 60s**.")
+    st.title("QuantBoard — Real-time Technical Analysis")
+    st.caption("Configure the sidebar to load prices and indicators. **Intraday 1m** with **60s auto-refresh**.")
 
     today = date.today()
     default_start = today - timedelta(days=365)
 
     with st.sidebar:
-        st.header("Parámetros")
+        st.header("Parameters")
         ticker = st.text_input("Ticker", value="AAPL").strip().upper()
-        start_date = st.date_input("Desde", value=default_start, max_value=today)
-        end_date = st.date_input("Hasta", value=today, min_value=default_start, max_value=today)
-        interval = st.selectbox("Intervalo", ["1d", "1h", "1wk", "1m"], index=0)
-        auto_refresh = st.checkbox("Auto-refrescar 1m", value=False, help="Actualiza cada 60 segundos en intervalo 1m.")
+        start_date = st.date_input("From", value=default_start, max_value=today)
+        end_date = st.date_input("To", value=today, min_value=default_start, max_value=today)
+        interval = st.selectbox("Interval", ["1d", "1h", "1wk", "1m"], index=0)
+        auto_refresh = st.checkbox("Auto-refresh 1m", value=False, help="Refreshes every 60 seconds when 1m interval is selected.")
 
     if start_date > end_date:
-        st.error("La fecha 'Desde' debe ser anterior a 'Hasta'.")
+        st.error("The 'From' date must be earlier than 'To'.")
         return
 
     _autorefresh_if_needed(auto_refresh, interval)
 
     if not ticker:
-        st.info("Ingresá un ticker para comenzar.")
+        st.info("Enter a ticker to begin.")
         return
 
-    with st.spinner("Descargando datos..."):
+    with st.spinner("Fetching data..."):
         prices = fetch_prices_cached(ticker, start=start_date, end=end_date, interval=interval)
 
     if prices.empty or "close" not in prices.columns:
-        st.error("No se encontraron datos para el ticker y rango seleccionado.")
+        st.error("No data for the selected range/interval.")
         return
 
     close = pd.to_numeric(prices["close"], errors="coerce")
@@ -73,15 +76,15 @@ def main() -> None:
     pct = (delta / prev_price * 100.0) if pd.notna(prev_price) and prev_price != 0 else 0.0
 
     c1, c2, c3 = st.columns(3)
-    c1.metric("Último precio", f"{latest_price:,.2f}", f"{delta:+,.2f}" if pd.notna(prev_price) else None)
-    c2.metric("Variación %", f"{pct:+.2f}%" if pd.notna(prev_price) else "N/A")
-    c3.metric("Última vela", latest_ts.strftime("%Y-%m-%d %H:%M:%S"))
+    c1.metric("Last Price", f"{latest_price:,.2f}", f"{delta:+,.2f}" if pd.notna(prev_price) else None)
+    c2.metric("Change %", f"{pct:+.2f}%" if pd.notna(prev_price) else "N/A")
+    c3.metric("Last Bar", latest_ts.strftime("%Y-%m-%d %H:%M:%S"))
 
-    st.caption(f"Histórico cargado: {len(prices):,} velas")
+    st.caption(f"Loaded candles: {len(prices):,}")
 
-    tab_price, tab_ind = st.tabs(["Precio", "Indicadores"])
+    tab_price, tab_ind = st.tabs(["Price", "Indicators"])
     with tab_price:
-        st.subheader("Gráfico de precio")
+        st.subheader("Price chart")
         fig = go.Figure()
         fig.add_candlestick(
             x=prices.index,
@@ -91,17 +94,18 @@ def main() -> None:
             close=prices["close"],
             name="OHLC",
         )
+        apply_plotly_theme(fig)
         st.plotly_chart(fig, use_container_width=True)
         st.dataframe(prices.tail(50), use_container_width=True)
 
     with tab_ind:
-        st.subheader("Indicadores SMA/RSI")
+        st.subheader("SMA/RSI indicators")
         col_sma, col_rsi = st.columns(2)
-        sma_win = col_sma.slider("Período SMA", 5, 200, 20, 1)
-        rsi_win = col_rsi.slider("Período RSI", 2, 50, 14, 1)
+        sma_win = col_sma.slider("SMA window", 5, 200, 20, 1)
+        rsi_win = col_rsi.slider("RSI window", 2, 50, 14, 1)
 
         sma_ser = sma(close, int(sma_win))
-        rsi_ser = rsi(close, window=int(rsi_win))  # usa window=
+        rsi_ser = rsi(close, window=int(rsi_win))
 
         g = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.07, row_heights=[0.65, 0.35])
         g.add_trace(go.Scatter(x=prices.index, y=close, mode="lines", name="Close"), row=1, col=1)
@@ -110,6 +114,7 @@ def main() -> None:
         g.add_hline(y=70, line_dash="dot", row=2, col=1)
         g.add_hline(y=30, line_dash="dot", row=2, col=1)
         g.update_layout(margin=dict(l=30, r=20, t=30, b=30), height=600)
+        apply_plotly_theme(g)
         st.plotly_chart(g, use_container_width=True)
 
 
