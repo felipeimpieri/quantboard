@@ -61,10 +61,11 @@ def run_backtest(
     Devuelve DataFrame con 'equity' y dict de métricas: CAGR, Sharpe, MaxDD.
     """
     data = df.copy()
+    data.columns = [str(c).lower() for c in data.columns]
     for c in ("open", "high", "low", "close"):
-        if c not in data.columns and "Close" in data.columns:
+        if c not in data.columns and "close" in data.columns:
             # por compat - ya normalizamos en capas superiores
-            data[c] = pd.to_numeric(data["Close"], errors="coerce")
+            data[c] = pd.to_numeric(data["close"], errors="coerce")
     close = pd.to_numeric(data["close"], errors="coerce").fillna(method="ffill")
     rets = close.pct_change().fillna(0.0)
 
