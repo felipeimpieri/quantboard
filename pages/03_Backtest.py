@@ -1,117 +1,109 @@
-# pages/03_Backtest.py
-"""Backtest — SMA crossover strategy."""
-
-from __future__ import annotations
-from datetime import datetime, timedelta
+import datetime as dt
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+import yfinance as yf
 
-from quantboard.data import get_prices
+st.set_page_config(page_title="Backtest", page_icon="🧪", layout="wide")
+st.title("🧪 Backtest — SMA Crossover")
 
-# signal helper
-try:
-    from quantboard.backtest import sma_crossover_signals as make_signal
-except Exception:
-    try:
-        from quantboard.strategies import signals_sma_crossover as make_signal  # legacy
-    except Exception:
-        make_signal = None
+@st.cache_data(show_spinner=False)
+def load_prices(ticker: str, start: dt.date, end: dt.date) -> pd.DataFrame:
+    df = yf.download(ticker, start=start, end=end, auto_adjust=True, progress=False)
+    if df.empty:
+        return df
+    df = df[["Close"]].rename(columns={"Close": "close"}).dropna()
+    df["ret"] = df["close"].pct_change().fillna(0.0)
+    return df
 
-# backtest runner
-try:
-    from quantboard.backtest import run_backtest
-except Exception:
-    run_backtest = None
+def add_smas(df: pd.DataFrame, fast: int, slow: int) -> pd.DataFrame:
+    out = df.copy()
+    out["sma_fast"] = out["close"].rolling(fast, min_periods=fast).mean()
+    out["sma_slow"] = out["close"].rolling(slow, min_periods=slow).mean()
+    return out
 
-# optional SMA for overlays
-try:
-    from quantboard.indicators import sma
-except Exception:
-    sma = None
+def signals(df: pd.DataFrame) -> pd.Series:
+    return (df["sma_fast"] > df["sma_slow"]).astype(int)
 
-st.set_page_config(page_title="Backtest — SMA", page_icon="🧪", layout="wide")
-st.title("Backtest — SMA crossover")
+def backtest(df: pd.DataFrame, sig: pd.Series, fee_bp: float = 5.0) -> pd.DataFrame:
+    out = df.copy()
+    out["signal"] = sig
+    out["signal_prev"] = out["signal"].shift(1).fillna(0)
+    out["str_ret"] = out["ret"] * out["signal_prev"]
+    fee = (out["signal"] != out["signal_prev"]).astype(int) * (fee_bp / 10000.0)
+    out["str_ret"] -= fee
+    out["equity"] = (1 + out["str_ret"]).cumprod()
+    out["buy_hold"] = (1 + out["ret"]).cumprod()
+    return out
 
+def cagr(series: pd.Series) -> float:
+    if series.empty: return np.nan
+    years = (series.index[-1] - series.index[0]).days / 365.25
+    return series.iloc[-1] ** (1/max(years, 1e-9)) - 1
+
+def max_dd(series: pd.Series) -> float:
+    peak = series.cummax()
+    dd = series/peak - 1
+    return float(dd.min())
+
+def sharpe(returns: pd.Series) -> float:
+    r = returns.dropna()
+    if r.std() == 0: return np.nan
+    return (r.mean()/r.std()) * np.sqrt(252)
+
+# ------- UI -------
 with st.sidebar:
-    st.header("Parameters")
-    ticker = st.text_input("Ticker", value="AAPL").strip().upper()
-    fast = st.number_input("Fast SMA", min_value=2, max_value=200, value=20, step=1)
-    slow = st.number_input("Slow SMA", min_value=5, max_value=400, value=50, step=1)
-    interval = st.selectbox("Interval", ["1d", "1h", "1wk"], index=0)
-    run_btn = st.button("Run", type="primary")
+    st.subheader("Parámetros")
+    ticker = st.text_input("Ticker", "AAPL").strip().upper()
+    col1, col2 = st.columns(2)
+    end = col2.date_input("Hasta", value=dt.date.today())
+    start = col1.date_input("Desde", value=end - dt.timedelta(days=365*5))
+    fast = st.number_input("SMA rápida", 3, 100, 20)
+    slow = st.number_input("SMA lenta", 10, 300, 100)
+    fee_bp = st.number_input("Costo ida+vuelta (bp)", 0.0, 100.0, 5.0, step=0.5)
 
-if not run_btn:
-    st.info("Set parameters on the sidebar and press **Run**.")
+if start >= end:
+    st.warning("La fecha 'Desde' debe ser anterior a 'Hasta'.")
     st.stop()
-
 if fast >= slow:
-    st.error("Fast SMA must be strictly less than Slow SMA.")
+    st.warning("La SMA rápida debe ser menor que la lenta.")
     st.stop()
 
-with st.spinner("Downloading data..."):
-    end = datetime.today().date()
-    start = (datetime.today() - timedelta(days=365)).date()
-    df = get_prices(ticker, start=start, end=end, interval=interval)
-
-if df.empty or "close" not in df.columns:
-    st.error("No data for the selected ticker/interval.")
+with st.spinner("Descargando precios…"):
+    px_df = load_prices(ticker, start, end)
+if px_df.empty:
+    st.error("No hay datos para ese ticker/rango.")
     st.stop()
 
-close = pd.to_numeric(df["close"], errors="coerce").dropna()
-if close.empty:
-    st.error("No valid closing prices to compute signals.")
-    st.stop()
+df = add_smas(px_df, fast, slow)
+sig = signals(df)
+bt = backtest(df, sig, fee_bp)
 
-if make_signal is None:
-    st.error("SMA crossover signal helper not found.")
-    st.stop()
-
-sig = make_signal(close, int(fast), int(slow))
-
-if run_backtest is None:
-    st.error("run_backtest() not found.")
-    st.stop()
-
-try:
-    bt, metrics = run_backtest(close, sig)
-except TypeError:
-    try:
-        bt, metrics = run_backtest(df, sig, fee_bps=0, slippage_bps=0, interval=interval)
-    except Exception as e:
-        st.exception(e)
-        st.stop()
-
-fig = go.Figure()
-if {"open", "high", "low", "close"}.issubset(df.columns):
-    fig.add_trace(go.Candlestick(x=df.index, open=df["open"], high=df["high"], low=df["low"], close=df["close"], name="OHLC"))
-else:
-    fig.add_trace(go.Scatter(x=close.index, y=close.values, mode="lines", name="Close"))
-
-if sma is not None:
-    fig.add_trace(go.Scatter(x=close.index, y=sma(close, int(fast))), name=f"SMA {fast}", mode="lines")
-    fig.add_trace(go.Scatter(x=close.index, y=sma(close, int(slow))), name=f"SMA {slow}", mode="lines")
-
-cross_up = sig.diff() == 1
-cross_dn = sig.diff() == -1
-fig.add_trace(go.Scatter(x=close.index[cross_up], y=close[cross_up], mode="markers",
-                         marker_symbol="triangle-up", marker_size=9, name="Buy"))
-fig.add_trace(go.Scatter(x=close.index[cross_dn], y=close[cross_dn], mode="markers",
-                         marker_symbol="triangle-down", marker_size=9, name="Sell"))
-fig.update_layout(margin=dict(l=40, r=20, t=40, b=40), height=520, title=f"{ticker} — SMA crossover")
-
-col1, col2 = st.columns([2, 1])
-with col1:
+# ------- Charts -------
+c1, c2 = st.columns(2)
+with c1:
+    st.subheader("Precio + SMAs")
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=bt.index, y=bt["close"], name="Close"))
+    fig.add_trace(go.Scatter(x=bt.index, y=bt["sma_fast"], name=f"SMA {fast}"))
+    fig.add_trace(go.Scatter(x=bt.index, y=bt["sma_slow"], name=f"SMA {slow}"))
     st.plotly_chart(fig, use_container_width=True)
-with col2:
-    st.subheader("Metrics")
-    mdf = pd.DataFrame([metrics]).T.rename(columns={0: "value"})
-    try:
-        st.dataframe(mdf.style.format("{:.4f}"), use_container_width=True)
-    except Exception:
-        st.dataframe(mdf, use_container_width=True)
 
-st.subheader("Equity curve")
-eq_fig = go.Figure(go.Scatter(x=bt.index, y=bt["equity"], mode="lines", name="Equity"))
-eq_fig.update_layout(margin=dict(l=40, r=20, t=40, b=40), height=380)
-st.plotly_chart(eq_fig, use_container_width=True)
+with c2:
+    st.subheader("Equity Curve (Strategy vs Buy&Hold)")
+    fig2 = go.Figure()
+    fig2.add_trace(go.Scatter(x=bt.index, y=bt["equity"], name="Strategy"))
+    fig2.add_trace(go.Scatter(x=bt.index, y=bt["buy_hold"], name="Buy&Hold"))
+    st.plotly_chart(fig2, use_container_width=True)
+
+# ------- Métricas -------
+st.divider()
+st.subheader("Métricas")
+colA, colB, colC = st.columns(3)
+colA.metric("CAGR Strategy", f"{cagr(bt['equity'])*100:,.2f}%")
+colA.metric("CAGR Buy&Hold", f"{cagr(bt['buy_hold'])*100:,.2f}%")
+colB.metric("Max DD Strategy", f"{max_dd(bt['equity'])*100:,.2f}%")
+colB.metric("Max DD B&H", f"{max_dd(bt['buy_hold'])*100:,.2f}%")
+colC.metric("Sharpe Strategy", f"{sharpe(bt['str_ret']):.2f}")
+colC.metric("Trades", int((bt['signal'] != bt['signal_prev']).sum()))

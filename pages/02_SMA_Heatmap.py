@@ -1,74 +1,92 @@
-# pages/02_SMA_Heatmap.py
-"""SMA Heatmap — grid search for fast/slow SMA parameters."""
-
-from __future__ import annotations
-from datetime import datetime, timedelta
+import datetime as dt
+import numpy as np
 import pandas as pd
+import plotly.express as px
 import streamlit as st
+import yfinance as yf
 
-from quantboard.data import get_prices
-from quantboard.optimize import grid_search_sma
-from quantboard.plots import heatmap_metric
+st.set_page_config(page_title="SMA Heatmap", page_icon="📈", layout="wide")
+st.title("📈 SMA Heatmap")
 
-st.set_page_config(page_title="SMA Heatmap", page_icon="🔥", layout="wide")
-st.title("SMA Heatmap")
+@st.cache_data(show_spinner=False)
+def load_prices(ticker: str, start: dt.date, end: dt.date) -> pd.DataFrame:
+    df = yf.download(ticker, start=start, end=end, auto_adjust=True, progress=False)
+    if df.empty:
+        return df
+    df = df[["Close"]].rename(columns={"Close": "close"}).dropna()
+    return df
 
+def fwd_return(close: pd.Series, horizon: int) -> pd.Series:
+    return close.shift(-horizon) / close - 1
+
+def build_stats(df: pd.DataFrame, windows: list[int], horizon: int) -> pd.DataFrame:
+    out = []
+    fr = fwd_return(df["close"], horizon)
+    for w in windows:
+        sma = df["close"].rolling(w, min_periods=w).mean()
+        above = fr[(df["close"] > sma)]
+        below = fr[(df["close"] <= sma)]
+        out.append({
+            "window": w,
+            "ret_above": float(np.nanmean(above)),
+            "ret_below": float(np.nanmean(below)),
+        })
+    return pd.DataFrame(out)
+
+# ------- UI -------
 with st.sidebar:
-    st.header("Parameters")
-    ticker = st.text_input("Ticker", value="AAPL").strip().upper()
+    st.subheader("Parámetros")
+    ticker = st.text_input("Ticker", "AAPL").strip().upper()
+    col1, col2 = st.columns(2)
+    end = col2.date_input("Hasta", value=dt.date.today())
+    start = col1.date_input("Desde", value=end - dt.timedelta(days=365*2))
+    w_min, w_max = st.slider("SMA (min–max)", 5, 200, (10, 100))
+    step = st.number_input("Paso", 1, 20, 5)
+    horizon = st.number_input("Horizonte (días)", 1, 60, 10)
 
-    st.subheader("Ranges")
-    fast_min, fast_max = st.slider("Fast SMA range", min_value=5, max_value=60, value=(10, 30))
-    slow_min, slow_max = st.slider("Slow SMA range", min_value=20, max_value=200, value=(50, 120))
+if start >= end:
+    st.warning("La fecha 'Desde' debe ser anterior a 'Hasta'.")
+    st.stop()
 
-    calc_btn = st.button("Calculate", type="primary")
+windows = list(range(w_min, w_max + 1, step))
 
-st.info("Pick ranges and press **Calculate**. Only valid pairs with fast < slow are considered.")
+with st.spinner("Descargando precios…"):
+    prices = load_prices(ticker, start, end)
+if prices.empty:
+    st.error("No hay datos para ese ticker/rango.")
+    st.stop()
 
-if calc_btn:
-    with st.spinner("Downloading data..."):
-        end = datetime.today().date()
-        start = (datetime.today() - timedelta(days=365)).date()
-        df = get_prices(ticker, start=start, end=end, interval="1d")
+stats = build_stats(prices, windows, horizon)
 
-    if df.empty or "close" not in df.columns:
-        st.error("No data for the selected range/interval or missing 'close' column.")
-        st.stop()
-
-    close = pd.to_numeric(df["close"], errors="coerce").dropna()
-    if close.empty:
-        st.error("No valid closing prices to compute the grid.")
-        st.stop()
-
-    fast_rng = range(int(fast_min), int(fast_max) + 1)
-    slow_rng = range(int(slow_min), int(slow_max) + 1)
-
-    z = grid_search_sma(
-        close,
-        fast_range=fast_rng,
-        slow_range=slow_rng,
-        metric="Sharpe",
+c1, c2 = st.columns(2)
+with c1:
+    st.subheader(f"Retorno medio futuro {horizon}d cuando **precio > SMA**")
+    fig1 = px.imshow(
+        np.array([stats["ret_above"].values]),
+        aspect="auto", origin="lower", color_continuous_scale="RdBu",
+        labels=dict(color=f"Ret {horizon}d")
     )
+    fig1.update_xaxes(tickmode="array",
+                      tickvals=list(range(len(windows))),
+                      ticktext=[str(w) for w in windows],
+                      title="SMA window")
+    fig1.update_yaxes(visible=False)
+    st.plotly_chart(fig1, use_container_width=True)
 
-    # blank fast>=slow
-    z = z.copy()
-    for f in list(z.index):
-        for s in list(z.columns):
-            if f >= s:
-                z.loc[f, s] = float("nan")
+with c2:
+    st.subheader(f"Retorno medio futuro {horizon}d cuando **precio ≤ SMA**")
+    fig2 = px.imshow(
+        np.array([stats["ret_below"].values]),
+        aspect="auto", origin="lower", color_continuous_scale="RdBu",
+        labels=dict(color=f"Ret {horizon}d")
+    )
+    fig2.update_xaxes(tickmode="array",
+                      tickvals=list(range(len(windows))),
+                      ticktext=[str(w) for w in windows],
+                      title="SMA window")
+    fig2.update_yaxes(visible=False)
+    st.plotly_chart(fig2, use_container_width=True)
 
-    st.subheader("Sharpe heatmap")
-    fig = heatmap_metric(z, title=f"{ticker} — SMA Grid (Sharpe)")
-    st.plotly_chart(fig, use_container_width=True)
-
-    c1, c2 = st.columns([3, 1])
-    with c1:
-        st.caption("Higher is better. Hover cells to inspect the pair.")
-    with c2:
-        if st.button("Open in Home"):
-            st.experimental_set_query_params(ticker=ticker)
-            try:
-                st.switch_page("streamlit_app.py")
-            except Exception:
-                st.success("Ticker set on Home. Go back to the main page from the menu.")
+st.caption("Rojo = promedio positivo; Azul = promedio negativo. Muestra cómo se comportó el retorno futuro "
+           "según estar por encima o por debajo de cada SMA.")
 
