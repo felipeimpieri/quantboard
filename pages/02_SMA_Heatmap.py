@@ -177,7 +177,7 @@ def main() -> None:
     st.success(f"Best combo: **Fast SMA {f_best} / Slow SMA {s_best}**")
 
     if st.button("Use in Home"):
-        st.experimental_set_query_params(ticker=ticker)
+        st.query_params["ticker"] = ticker
         try:
             st.switch_page("streamlit_app.py")
         except Exception:  # pragma: no cover - depends on Streamlit runtime
