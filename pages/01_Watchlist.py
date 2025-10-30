@@ -60,7 +60,7 @@ if watchlist:
             c2.write(f"{row['Last price']:.2f}")
             c3.write(f"{row['30d %']:.2f}%")
             if c4.button("Open in Home", key=f"open_{row['Ticker']}"):
-                st.experimental_set_query_params(ticker=row["Ticker"])
+                st.query_params["ticker"] = row["Ticker"]
                 try:
                     st.switch_page("streamlit_app.py")
                 except Exception:
