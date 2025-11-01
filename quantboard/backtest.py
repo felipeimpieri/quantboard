@@ -108,7 +108,8 @@ def run_backtest(
 
     prev_pos = pos.shift(1).fillna(0.0)
     entries = (pos != 0.0) & (pos != prev_pos)
-    trade_ids = entries.cumsum()
+    # shift trade ids so the flip bar's return stays with the trade that held it
+    trade_ids = entries.shift(1).cumsum()
     trade_ids = trade_ids.where(pos != 0.0)
     grouped = (1.0 + strat_rets).groupby(trade_ids)
     trade_returns = grouped.prod() - 1.0
