@@ -176,6 +176,37 @@ def main() -> None:
     f_best, s_best = map(int, stacked.idxmax())
     st.success(f"Best combo: **Fast SMA {f_best} / Slow SMA {s_best}**")
 
+    top_df = (
+        stacked.sort_values(ascending=False)
+        .head(10)
+        .rename_axis(("fast", "slow"))
+        .reset_index(name="Sharpe")
+    )
+
+    st.subheader(f"Top {len(top_df)} combinations")
+    header_cols = st.columns([1, 1, 1, 1.5])
+    header_cols[0].markdown("**Fast**")
+    header_cols[1].markdown("**Slow**")
+    header_cols[2].markdown("**Sharpe**")
+    header_cols[3].markdown("**Action**")
+
+    for idx, row in top_df.iterrows():
+        fast_val = int(row["fast"])
+        slow_val = int(row["slow"])
+        sharpe_val = float(row["Sharpe"])
+        cols = st.columns([1, 1, 1, 1.5])
+        cols[0].write(fast_val)
+        cols[1].write(slow_val)
+        cols[2].write(f"{sharpe_val:.2f}")
+        if cols[3].button("Run Backtest", key=f"run_backtest_{idx}"):
+            st.query_params["ticker"] = ticker
+            st.query_params["fast"] = str(fast_val)
+            st.query_params["slow"] = str(slow_val)
+            try:
+                st.switch_page("pages/03_Backtest.py")
+            except Exception:  # pragma: no cover - depends on Streamlit runtime
+                st.info("Open Backtest from the menu; the parameters were set.")
+
     if st.button("Use in Home"):
         st.query_params["ticker"] = ticker
         try:
