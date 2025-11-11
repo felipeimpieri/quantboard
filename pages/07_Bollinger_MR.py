@@ -8,9 +8,10 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from quantboard.backtest import run_backtest
-from quantboard.data import get_prices
+from quantboard.data import get_prices_cached
 from quantboard.plots import apply_plotly_theme
 from quantboard.strategies import signals_bollinger_mean_reversion
+from quantboard.ui.state import get_param, set_param, shareable_link_button
 from quantboard.ui.theme import apply_global_theme
 
 st.set_page_config(page_title="Bollinger Mean Reversion", page_icon="📊", layout="wide")
@@ -93,17 +94,39 @@ def _price_with_signals(
 def main() -> None:
     st.title("Backtest — Bollinger mean reversion")
 
+    shareable_link_button()
+
+    today = date.today()
+    default_start = today - timedelta(days=365 * 2)
+
+    ticker_default = str(get_param("ticker", "AAPL")).strip().upper() or "AAPL"
+    end_default = get_param("bb_end", today)
+    start_default = get_param("bb_start", default_start)
+    interval_options = ["1d", "1h", "1wk"]
+    interval_default = str(get_param("interval", "1d"))
+    if interval_default not in interval_options:
+        interval_default = "1d"
+    window_default = int(get_param("bb_window", 20))
+    n_std_default = float(get_param("bb_n_std", 2.0))
+    fee_default = int(get_param("bb_fee_bps", 0))
+    slip_default = int(get_param("bb_slippage_bps", 0))
+
+    window_default = max(5, min(200, window_default))
+    n_std_default = max(1.0, min(5.0, n_std_default))
+    fee_default = max(0, min(50, fee_default))
+    slip_default = max(0, min(50, slip_default))
+
     with st.sidebar:
         st.header("Parameters")
         with st.form("bb_form"):
-            ticker = st.text_input("Ticker", value="AAPL").strip().upper()
-            end = st.date_input("To", value=date.today())
-            start = st.date_input("From", value=date.today() - timedelta(days=365 * 2))
-            interval = st.selectbox("Interval", ["1d", "1h", "1wk"], index=0)
-            window = st.number_input("Window", 5, 200, 20, step=1)
-            n_std = st.number_input("Std dev", 1.0, 5.0, 2.0, step=0.5)
-            fee_bps = st.number_input("Fees (bps)", 0, 50, 0, step=1)
-            slip_bps = st.number_input("Slippage (bps)", 0, 50, 0, step=1)
+            ticker = st.text_input("Ticker", value=ticker_default).strip().upper()
+            end = st.date_input("To", value=end_default)
+            start = st.date_input("From", value=start_default)
+            interval = st.selectbox("Interval", interval_options, index=interval_options.index(interval_default))
+            window = st.number_input("Window", 5, 200, int(window_default), step=1)
+            n_std = st.number_input("Std dev", 1.0, 5.0, float(n_std_default), step=0.5)
+            fee_bps = st.number_input("Fees (bps)", 0, 50, int(fee_default), step=1)
+            slip_bps = st.number_input("Slippage (bps)", 0, 50, int(slip_default), step=1)
             submitted = st.form_submit_button("Run backtest", type="primary")
 
     st.info("Configure the sidebar parameters and run the backtest.")
@@ -111,8 +134,17 @@ def main() -> None:
     if not submitted:
         return
 
+    set_param("ticker", ticker or None)
+    set_param("bb_end", end)
+    set_param("bb_start", start)
+    set_param("interval", interval)
+    set_param("bb_window", int(window))
+    set_param("bb_n_std", float(n_std))
+    set_param("bb_fee_bps", int(fee_bps))
+    set_param("bb_slippage_bps", int(slip_bps))
+
     with st.spinner("Fetching data..."):
-        df = get_prices(ticker, start=start, end=end, interval=interval)
+        df = get_prices_cached(ticker, start=start, end=end, interval=interval)
 
     df = _validate_prices(df)
     if df is None:

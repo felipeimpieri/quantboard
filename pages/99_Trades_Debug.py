@@ -1,57 +1,24 @@
 """Trades debug page to inspect trade segmentation."""
 from __future__ import annotations
 
-from collections.abc import MutableMapping
 from datetime import date, timedelta
 from io import StringIO
 
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-import yfinance as yf
 
+from quantboard.data import get_prices_cached
 from quantboard.plots import apply_plotly_theme
+from quantboard.ui.state import get_param, set_param, shareable_link_button
 from quantboard.ui.theme import apply_global_theme
 
 st.set_page_config(page_title="Trades Debug", page_icon="🔎", layout="wide")
 apply_global_theme()
 
 
-def _get_param(params: MutableMapping[str, str], key: str, default: str) -> str:
-    value = params.get(key)
-    if value is None:
-        return default
-    return str(value)
-
-
-def _set_param(params: MutableMapping[str, str], key: str, value: str) -> None:
-    if params.get(key) == value:
-        return
-    params[key] = value
-
-
-def _parse_int(value: str, default: int) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
-
-
-@st.cache_data(ttl=60)
 def _load_prices(ticker: str, start: date, end: date) -> pd.DataFrame:
-    data = yf.download(
-        ticker,
-        start=start,
-        end=end,
-        interval="1d",
-        auto_adjust=True,
-        progress=False,
-    )
-    if data.empty:
-        return data
-    data.index = pd.to_datetime(data.index).tz_localize(None)
-    data.columns = [str(c).lower() for c in data.columns]
-    return data
+    return get_prices_cached(ticker, start=start, end=end, interval="1d")
 
 
 def _clean_close(df: pd.DataFrame) -> pd.Series | None:
@@ -68,27 +35,36 @@ def _clean_close(df: pd.DataFrame) -> pd.Series | None:
 def main() -> None:
     st.title("🔎 Trades Debug")
 
-    params = st.query_params
-    default_ticker = _get_param(params, "ticker", "AAPL")
-    default_fast = _parse_int(_get_param(params, "fast", "20"), 20)
-    default_slow = _parse_int(_get_param(params, "slow", "100"), 100)
+    shareable_link_button()
+
+    ticker_default = str(get_param("ticker", "AAPL")).strip().upper() or "AAPL"
+    fast_default = int(get_param("fast", 20))
+    slow_default = int(get_param("slow", 100))
+    lookback_default = int(get_param("trades_lookback", 2))
+
+    fast_default = max(1, min(365, fast_default))
+    slow_default = max(2, min(500, slow_default))
+    lookback_default = max(1, min(5, lookback_default))
 
     with st.sidebar:
         st.header("Parameters")
-        ticker_input = st.text_input("Ticker", value=default_ticker).strip().upper()
-        fast_input = st.number_input("Fast SMA", min_value=1, max_value=365, value=int(default_fast), step=1)
-        slow_input = st.number_input("Slow SMA", min_value=2, max_value=500, value=int(default_slow), step=1)
-        lookback_years = st.slider("Lookback (years)", min_value=1, max_value=5, value=2)
+        ticker_input = st.text_input("Ticker", value=ticker_default).strip().upper()
+        fast_input = st.number_input("Fast SMA", min_value=1, max_value=365, value=int(fast_default), step=1)
+        slow_input = st.number_input("Slow SMA", min_value=2, max_value=500, value=int(slow_default), step=1)
+        lookback_years = st.slider("Lookback (years)", min_value=1, max_value=5, value=int(lookback_default))
 
     if ticker_input:
-        _set_param(params, "ticker", ticker_input)
-    ticker = ticker_input or default_ticker
+        set_param("ticker", ticker_input)
+    else:
+        set_param("ticker", None)
+    ticker = ticker_input or ticker_default
 
     fast = int(fast_input)
     slow = int(slow_input)
 
-    _set_param(params, "fast", str(fast))
-    _set_param(params, "slow", str(slow))
+    set_param("fast", int(fast))
+    set_param("slow", int(slow))
+    set_param("trades_lookback", int(lookback_years))
 
     if fast >= slow:
         st.error("Fast SMA must be strictly lower than Slow SMA.")

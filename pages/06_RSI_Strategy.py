@@ -8,9 +8,10 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from quantboard.backtest import run_backtest
-from quantboard.data import get_prices
+from quantboard.data import get_prices_cached
 from quantboard.indicators import rsi
 from quantboard.plots import apply_plotly_theme
+from quantboard.ui.state import get_param, set_param, shareable_link_button
 from quantboard.ui.theme import apply_global_theme
 
 st.set_page_config(page_title="RSI Strategy", page_icon="📈", layout="wide")
@@ -123,19 +124,46 @@ def _build_signals(
 def main() -> None:
     st.title("Backtest — RSI strategy")
 
+    shareable_link_button()
+
+    today = date.today()
+    default_start = today - timedelta(days=365 * 2)
+
+    ticker_default = str(get_param("ticker", "AAPL")).strip().upper() or "AAPL"
+    end_default = get_param("rsi_end", today)
+    start_default = get_param("rsi_start", default_start)
+    interval_options = ["1d", "1h", "1wk"]
+    interval_default = str(get_param("interval", "1d"))
+    if interval_default not in interval_options:
+        interval_default = "1d"
+    period_default = int(get_param("rsi_period", 14))
+    lower_default = int(get_param("rsi_lower", 30))
+    upper_default = int(get_param("rsi_upper", 70))
+    mode_default = str(get_param("rsi_mode", "Long only"))
+    fee_default = int(get_param("rsi_fee_bps", 0))
+    slip_default = int(get_param("rsi_slippage_bps", 0))
+
+    period_default = max(2, min(100, period_default))
+    lower_default = max(0, min(100, lower_default))
+    upper_default = max(lower_default + 1, min(100, upper_default))
+    if mode_default not in ["Long only", "Flip long/short"]:
+        mode_default = "Long only"
+    fee_default = max(0, min(50, fee_default))
+    slip_default = max(0, min(50, slip_default))
+
     with st.sidebar:
         st.header("Parameters")
         with st.form("rsi_form"):
-            ticker = st.text_input("Ticker", value="AAPL").strip().upper()
-            end = st.date_input("To", value=date.today())
-            start = st.date_input("From", value=date.today() - timedelta(days=365 * 2))
-            interval = st.selectbox("Interval", ["1d", "1h", "1wk"], index=0)
-            period = st.number_input("RSI period", 2, 100, 14, step=1)
-            lower = st.number_input("Lower threshold", 0, 100, 30, step=1)
-            upper = st.number_input("Upper threshold", 0, 100, 70, step=1)
-            mode = st.selectbox("Signal mode", ["Long only", "Flip long/short"], index=0)
-            fee_bps = st.number_input("Fees (bps)", 0, 50, 0, step=1)
-            slip_bps = st.number_input("Slippage (bps)", 0, 50, 0, step=1)
+            ticker = st.text_input("Ticker", value=ticker_default).strip().upper()
+            end = st.date_input("To", value=end_default)
+            start = st.date_input("From", value=start_default)
+            interval = st.selectbox("Interval", interval_options, index=interval_options.index(interval_default))
+            period = st.number_input("RSI period", 2, 100, int(period_default), step=1)
+            lower = st.number_input("Lower threshold", 0, 100, int(lower_default), step=1)
+            upper = st.number_input("Upper threshold", 0, 100, int(upper_default), step=1)
+            mode = st.selectbox("Signal mode", ["Long only", "Flip long/short"], index=["Long only", "Flip long/short"].index(mode_default))
+            fee_bps = st.number_input("Fees (bps)", 0, 50, int(fee_default), step=1)
+            slip_bps = st.number_input("Slippage (bps)", 0, 50, int(slip_default), step=1)
             submitted = st.form_submit_button("Run backtest", type="primary")
 
     st.info("Configure the sidebar parameters and run the backtest.")
@@ -143,12 +171,23 @@ def main() -> None:
     if not submitted:
         return
 
+    set_param("ticker", ticker or None)
+    set_param("rsi_end", end)
+    set_param("rsi_start", start)
+    set_param("interval", interval)
+    set_param("rsi_period", int(period))
+    set_param("rsi_lower", int(lower))
+    set_param("rsi_upper", int(upper))
+    set_param("rsi_mode", mode)
+    set_param("rsi_fee_bps", int(fee_bps))
+    set_param("rsi_slippage_bps", int(slip_bps))
+
     if lower >= upper:
         st.error("Lower threshold must be less than Upper threshold.")
         return
 
     with st.spinner("Fetching data..."):
-        df = get_prices(ticker, start=start, end=end, interval=interval)
+        df = get_prices_cached(ticker, start=start, end=end, interval=interval)
 
     df = _validate_prices(df)
     if df is None:
