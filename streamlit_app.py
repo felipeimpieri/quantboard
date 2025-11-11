@@ -43,9 +43,19 @@ def main() -> None:
     today = date.today()
     default_start = today - timedelta(days=365)
 
+    raw_ticker_param = st.query_params.get("ticker")
+    initial_ticker = "AAPL"
+    if isinstance(raw_ticker_param, list):
+        candidate = (raw_ticker_param[0] if raw_ticker_param else "")
+    else:
+        candidate = raw_ticker_param or ""
+    candidate = str(candidate).strip().upper()
+    if candidate:
+        initial_ticker = candidate
+
     with st.sidebar:
         st.header("Parameters")
-        ticker = st.text_input("Ticker", value="AAPL").strip().upper()
+        ticker = st.text_input("Ticker", value=initial_ticker).strip().upper()
         start_date = st.date_input("From", value=default_start, max_value=today)
         end_date = st.date_input("To", value=today, min_value=default_start, max_value=today)
         interval = st.selectbox("Interval", ["1d", "1h", "1wk", "1m"], index=0)
