@@ -1,5 +1,6 @@
 
 # QuantBoard — Análisis técnico y Backtesting
+[![CI](https://github.com/felipeimpieri/quantboard/actions/workflows/ci.yml/badge.svg)](https://github.com/felipeimpieri/quantboard/actions/workflows/ci.yml)
 Dashboard interactivo hecho con **Streamlit + yfinance + Plotly** para analizar precios, aplicar indicadores y correr backtests simples.
 
 > **v0.2 – Novedades**

@@ -63,7 +63,7 @@ class BacktestAlignmentTest(unittest.TestCase):
         ]
         expected_old = [
             (1.0 + rets.iloc[1]) - 1.0,
-            (1.0 + rets.iloc[2]) * (1.0 - rets.iloc[3]) - 1.0,
+            (1.0 + rets.iloc[2]) * (1.0 - rets.iloc[3]) * (1.0 - rets.iloc[4]) - 1.0,
         ]
 
         self.assertAlmostEqual(new_returns.iloc[0], expected_new[0])
