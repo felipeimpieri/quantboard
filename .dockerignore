@@ -1,0 +1,16 @@
+.git
+.venv
+venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite
+*.log
+.env
+.DS_Store
+.pytest_cache
+.mypy_cache
+.streamlit/cache
+.streamlit/state
