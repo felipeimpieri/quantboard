@@ -1,4 +1,5 @@
 
+
 # QuantBoard — Análisis técnico y Backtesting
 Dashboard interactivo hecho con **Streamlit + yfinance + Plotly** para analizar precios, aplicar indicadores y correr backtests simples.
 
@@ -50,3 +51,13 @@ source .venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 python -m streamlit run streamlit_app.py
+
+
+## Ejecutar QuantBoard con Docker
+
+Si tenés Docker instalado, podés correr el dashboard sin instalar Python ni dependencias:
+
+### 1. Construir la imagen
+
+```bash
+docker build -t quantboard .
