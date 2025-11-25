@@ -105,6 +105,31 @@ def _run_signals(close: pd.Series, fast: int, slow: int) -> pd.Series:
     return sig.replace(0, pd.NA).ffill().fillna(0.0)
 
 
+def _clean_prices(df: pd.DataFrame) -> pd.DataFrame | None:
+    price_cols = ["open", "high", "low", "close", "volume"]
+    numeric = {col: pd.to_numeric(df.get(col), errors="coerce") for col in price_cols if col in df}
+    clean = df.assign(**numeric).dropna(subset=["close"])
+    if clean.empty:
+        st.error("No price data available after cleaning.")
+        return None
+    return clean
+
+
+def _run_signals(close: pd.Series, fast: int, slow: int) -> pd.Series:
+    if signals_sma_crossover is not None:
+        sig, _ = signals_sma_crossover(close, fast=fast, slow=slow)
+        return sig
+
+    sma_fast = sma(close, fast)
+    sma_slow = sma(close, slow)
+    cross_up = (sma_fast > sma_slow) & (sma_fast.shift(1) <= sma_slow.shift(1))
+    cross_dn = (sma_fast < sma_slow) & (sma_fast.shift(1) >= sma_slow.shift(1))
+    sig = pd.Series(0.0, index=close.index)
+    sig = sig.where(~cross_up, 1.0)
+    sig = sig.where(~cross_dn, -1.0)
+    return sig.replace(0, pd.NA).ffill().fillna(0.0)
+
+
 def main() -> None:
     st.title("Backtest — SMA crossover")
 
@@ -142,12 +167,7 @@ def main() -> None:
             fee_bps = st.number_input("Fees (bps)", 0, 50, int(fee_default), step=1)
             slip_bps = st.number_input("Slippage (bps)", 0, 50, int(slip_default), step=1)
             submitted = st.form_submit_button("Run backtest", type="primary")
-
-    st.info("Configure the sidebar parameters and run the backtest.")
-
-    if not submitted:
-        return
-
+           
     set_param("ticker", ticker or None)
     set_param("bt_end", end)
     set_param("bt_start", start)
@@ -156,6 +176,18 @@ def main() -> None:
     set_param("slow", int(slow))
     set_param("fee_bps", int(fee_bps))
     set_param("slippage_bps", int(slip_bps))
+
+    st.info("Configure the sidebar parameters and run the backtest.")
+
+    if not submitted:
+        return
+
+    if fast >= slow:
+        st.error("Fast SMA must be smaller than Slow SMA.")
+        return
+
+    with st.spinner("Fetching data..."):
+        df = _load_prices(ticker, start=start, end=end)
 
     if fast >= slow:
         st.error("Fast SMA must be smaller than Slow SMA.")

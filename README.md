@@ -51,3 +51,12 @@ source .venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 python -m streamlit run streamlit_app.py
+
+### Ejecutar con Docker
+```bash
+# Construir la imagen
+docker build -t quantboard .
+
+# Ejecutar el contenedor (Streamlit en http://localhost:8501)
+docker run -p 8501:8501 quantboard
+```
