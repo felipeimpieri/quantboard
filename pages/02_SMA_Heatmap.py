@@ -3,7 +3,10 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+import datetime as dt
+import numpy as np
 import pandas as pd
+import plotly.express as px
 import streamlit as st
 
 from quantboard.data import get_prices_cached
@@ -62,21 +65,27 @@ def main() -> None:
             ticker = st.text_input("Ticker", value=ticker_default).strip().upper()
             end = st.date_input("To", value=end_default)
             start = st.date_input("From", value=start_default)
-            fast_min, fast_max = st.slider("Fast SMA range", 5, 60, (fast_min_default, fast_max_default))
-            slow_min, slow_max = st.slider("Slow SMA range", 20, 240, (slow_min_default, slow_max_default))
+            fast_min, fast_max = st.slider(
+                "Fast SMA range", 5, 60, (fast_min_default, fast_max_default)
+            )
+            slow_min, slow_max = st.slider(
+                "Slow SMA range", 20, 240, (slow_min_default, slow_max_default)
+            )
             submitted = st.form_submit_button("Run search", type="primary")
 
-    set_param("ticker", ticker or None)
-    set_param("heat_end", end)
-    set_param("heat_start", start)
-    set_param("heat_fast_min", int(fast_min))
-    set_param("heat_fast_max", int(fast_max))
-    set_param("heat_slow_min", int(slow_min))
-    set_param("heat_slow_max", int(slow_max))
+        # If the form was not submitted, show a hint and exit early
+        if not submitted:
+            st.info("Choose parameters and click **Run search**.")
+            return
 
-    if not submitted:
-        st.info("Choose parameters and click **Run search**.")
-        return
+        # Persist parameters for sharable links / reload
+        set_param("ticker", ticker or None)
+        set_param("heat_end", end)
+        set_param("heat_start", start)
+        set_param("heat_fast_min", int(fast_min))
+        set_param("heat_fast_max", int(fast_max))
+        set_param("heat_slow_min", int(slow_min))
+        set_param("heat_slow_max", int(slow_max))
 
     if fast_min >= slow_min:
         st.error("Fast SMA range must stay below the Slow SMA range.")
@@ -104,7 +113,10 @@ def main() -> None:
                 z.loc[fast_window, slow_window] = float("nan")
 
     st.subheader("Heatmap (Sharpe)")
-    st.plotly_chart(heatmap_metric(z, title="SMA grid — Sharpe"), use_container_width=True)
+    st.plotly_chart(
+        heatmap_metric(z, title="SMA grid — Sharpe"),
+        use_container_width=True,
+    )
 
     stacked = z.stack().dropna().astype(float)
     if stacked.empty:

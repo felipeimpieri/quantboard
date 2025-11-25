@@ -7,4 +7,7 @@ st.title("⚙️ Optimize SMA")
 
 shareable_link_button()
 
-st.info("This page was replaced by **SMA Heatmap**. Use the *SMA Heatmap* menu item to optimize parameters.")
+st.info(
+    "This page was replaced by **SMA Heatmap**. "
+    "Use the *SMA Heatmap* menu item to optimize parameters."
+)
