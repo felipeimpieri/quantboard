@@ -1,0 +1,23 @@
+# Git y metadatos
+.git
+.github
+.gitignore
+
+# Entornos y cosas locales
+.venv
+.env
+.envrc
+*.log
+
+# Cachés de Python
+__pycache__/
+*/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Caché de Streamlit
+.streamlit/cache/
+
+# Datos locales pesados (ajustá según uses)
+data/
