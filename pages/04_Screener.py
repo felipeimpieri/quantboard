@@ -1,178 +1,279 @@
-"""Screener page displaying technical metrics for the saved watchlist."""
-from __future__ import annotations
-
-from datetime import datetime, timedelta
-import math
-from typing import Dict, List
+import json
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
 import streamlit as st
 
-from quantboard.data import get_prices
-from quantboard.features.watchlist import load_watchlist
-from quantboard.indicators import rsi, sma
-from quantboard.ui.theme import apply_global_theme
-
-st.set_page_config(page_title="Screener", page_icon="🧮", layout="wide")
-apply_global_theme()
-
-st.title("Screener")
-
-watchlist: List[str] = load_watchlist()
-if not watchlist:
-    st.info("Your watchlist is empty. Add tickers from the Watchlist page.")
-    st.stop()
+# Try to use the helper if it exists, but don't crash if not.
+try:
+    from quantboard.features.watchlist import load_watchlist  # type: ignore
+except Exception:  # pragma: no cover - defensive import
+    load_watchlist = None  # type: ignore
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def load_daily_history(ticker: str) -> pd.DataFrame:
-    """Fetch up to the last 60 trading days of daily data for a ticker."""
-    end = datetime.utcnow().date()
-    start = end - timedelta(days=120)
-    df = get_prices(ticker, start=start.isoformat(), end=end.isoformat(), interval="1d")
-    if df.empty:
-        return df
-    if len(df) > 60:
-        df = df.tail(60)
+# ---------- Helpers ----------
+
+
+def _read_watchlist() -> List[str]:
+    """
+    Return a list of tickers from data/watchlist.json.
+
+    If quantboard.features.watchlist.load_watchlist exists, use it.
+    Otherwise fall back to reading the JSON file directly.
+    """
+    if callable(load_watchlist):
+        try:
+            tickers = load_watchlist()
+            if isinstance(tickers, dict):
+                tickers = tickers.get("tickers", [])
+            return [t.strip().upper() for t in tickers if t]
+        except Exception:
+            # Fallback to manual JSON read if helper fails.
+            pass
+
+    json_path = Path("data") / "watchlist.json"
+    if not json_path.exists():
+        return []
+
+    try:
+        with json_path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return []
+
+    if isinstance(data, dict):
+        tickers = data.get("tickers", [])
+    else:
+        tickers = data
+
+    return [str(t).strip().upper() for t in tickers if t]
+
+
+def _rsi(series: pd.Series, length: int = 14) -> float:
+    """Compute classic RSI for the last value in the series."""
+    if len(series) < length + 1:
+        return np.nan
+
+    delta = series.diff()
+    gains = delta.clip(lower=0.0)
+    losses = -delta.clip(upper=0.0)
+
+    avg_gain = gains.rolling(length).mean()
+    avg_loss = losses.rolling(length).mean()
+
+    rs = avg_gain / avg_loss.replace(0, np.nan)
+    rsi = 100 - (100 / (1 + rs))
+
+    return float(rsi.iloc[-1])
+
+
+def _sma(series: pd.Series, window: int) -> float:
+    if len(series) < window:
+        return np.nan
+    return float(series.rolling(window).mean().iloc[-1])
+
+
+def _label_trend(
+    rsi_value: float, sma20: float, sma50: float, close: float
+) -> str:
+    """
+    Very simple Bullish/Bearish/Neutral label:
+    - Bullish: close > sma20 > sma50 and RSI >= 55
+    - Bearish: close < sma20 < sma50 and RSI <= 45
+    - Otherwise: Neutral
+    """
+    if any(np.isnan(x) for x in [rsi_value, sma20, sma50, close]):
+        return "Neutral"
+
+    bullish = close > sma20 > sma50 and rsi_value >= 55
+    bearish = close < sma20 < sma50 and rsi_value <= 45
+
+    if bullish:
+        return "Bullish"
+    if bearish:
+        return "Bearish"
+    return "Neutral"
+
+
+def _sma_crossover_state(sma20: float, sma50: float) -> str:
+    """
+    Return a simple crossover state for SMA(20) vs SMA(50).
+    """
+    if np.isnan(sma20) or np.isnan(sma50):
+        return "N/A"
+    if sma20 > sma50:
+        return "Bullish (20 > 50)"
+    if sma20 < sma50:
+        return "Bearish (20 < 50)"
+    return "Neutral (20 = 50)"
+
+
+@st.cache_data(ttl=3600)
+def _fetch_price_history(
+    ticker: str, days: int = 90
+) -> Optional[pd.DataFrame]:
+    """
+    Download ~last 60 trading days at 1d resolution.
+    We use 90 calendar days to be safe and then trim.
+    """
+    try:
+        import yfinance as yf  # Local import to keep py_compile tolerant
+    except Exception:
+        return None
+
+    try:
+        df = yf.download(ticker, period=f"{days}d", interval="1d", auto_adjust=False)
+    except Exception:
+        return None
+
+    if df is None or df.empty:
+        return None
+
+    # Normalize OHLC column names to lower-case.
+    df = df.rename(
+        columns={
+            "Open": "open",
+            "High": "high",
+            "Low": "low",
+            "Close": "close",
+            "Adj Close": "adj_close",
+            "Volume": "volume",
+        }
+    )
+
+    # Keep last ~60 trading days.
+    df = df.tail(60)
     return df
 
 
-def pct_change(series: pd.Series, periods: int) -> float | None:
-    if len(series) <= periods:
-        return None
-    change = series.pct_change(periods=periods).iloc[-1]
-    if pd.isna(change) or not np.isfinite(change):
-        return None
-    return float(change * 100.0)
-
-
-def compute_row(ticker: str, data: pd.DataFrame) -> Dict[str, object]:
-    close = pd.to_numeric(data.get("close"), errors="coerce").dropna()
-    row: Dict[str, object] = {
+def _compute_metrics_for_ticker(ticker: str) -> Dict[str, Any]:
+    """
+    Compute metrics for a single ticker.
+    Robust to errors: on failure we return N/A row.
+    """
+    base_row: Dict[str, Any] = {
         "Ticker": ticker,
-        "Last price": math.nan,
-        "%1d": math.nan,
-        "%5d": math.nan,
-        "%30d": math.nan,
-        "RSI(14)": math.nan,
-        "distance_to_SMA20 (%)": math.nan,
-        "Fast/Slow crossover": "N/A",
-        "Signal": "N/A",
-        "Open in Home": f"streamlit_app.py?ticker={ticker}",
+        "%1d": np.nan,
+        "%5d": np.nan,
+        "%30d": np.nan,
+        "RSI(14)": np.nan,
+        "Distance to SMA20 (%)": np.nan,
+        "SMA20": np.nan,
+        "SMA50": np.nan,
+        "SMA20/50 State": "N/A",
+        "Trend Label": "Neutral",
+        "Open in Home": "",
     }
 
-    if close.empty:
+    try:
+        df = _fetch_price_history(ticker)
+        if df is None or df.empty or "close" not in df.columns:
+            return base_row
+
+        close = df["close"].dropna()
+        if close.empty:
+            return base_row
+
+        last_close = float(close.iloc[-1])
+
+        # Percentage returns.
+        def pct_return(window: int) -> float:
+            if len(close) <= window:
+                return np.nan
+            past = float(close.iloc[-(window + 1)])
+            return (last_close / past - 1.0) * 100.0
+
+        r1d = pct_return(1)
+        r5d = pct_return(5)
+        r30d = pct_return(30)
+
+        sma20 = _sma(close, 20)
+        sma50 = _sma(close, 50)
+
+        dist_sma20 = (
+            (last_close / sma20 - 1.0) * 100.0 if not np.isnan(sma20) else np.nan
+        )
+
+        rsi_val = _rsi(close, 14)
+        state = _sma_crossover_state(sma20, sma50)
+        label = _label_trend(rsi_val, sma20, sma50, last_close)
+
+        row = {
+            **base_row,
+            "%1d": r1d,
+            "%5d": r5d,
+            "%30d": r30d,
+            "RSI(14)": rsi_val,
+            "Distance to SMA20 (%)": dist_sma20,
+            "SMA20": sma20,
+            "SMA50": sma50,
+            "SMA20/50 State": state,
+            "Trend Label": label,
+            # Relative link that sets ?ticker=XYZ
+            "Open in Home": f"?ticker={ticker}",
+        }
         return row
-
-    last_price = float(close.iloc[-1])
-    row["Last price"] = last_price
-
-    for periods, key in [(1, "%1d"), (5, "%5d"), (30, "%30d")]:
-        pct_val = pct_change(close, periods)
-        if pct_val is not None:
-            row[key] = pct_val
-
-    rsi_series = rsi(close, period=14).dropna()
-    if not rsi_series.empty:
-        row["RSI(14)"] = float(rsi_series.iloc[-1])
-
-    sma_fast = sma(close, 20)
-    sma_slow = sma(close, 50)
-    sma20_val = sma_fast.iloc[-1]
-    sma50_val = sma_slow.iloc[-1]
-    sma20_last = float(sma20_val) if pd.notna(sma20_val) else math.nan
-    sma50_last = float(sma50_val) if pd.notna(sma50_val) else math.nan
-
-    if not math.isnan(sma20_last):
-        row["distance_to_SMA20 (%)"] = ((last_price - sma20_last) / sma20_last) * 100.0 if sma20_last else math.nan
-
-    state = "N/A"
-    if not math.isnan(sma20_last) and not math.isnan(sma50_last):
-        if sma20_last > sma50_last:
-            state = "Bullish"
-        elif sma20_last < sma50_last:
-            state = "Bearish"
-        else:
-            state = "Neutral"
-    row["Fast/Slow crossover"] = state
-
-    signal = "Neutral"
-    rsi_value = row.get("RSI(14)")
-    if isinstance(rsi_value, float):
-        if state == "Bullish" and rsi_value >= 55:
-            signal = "Bullish"
-        elif state == "Bearish" and rsi_value <= 45:
-            signal = "Bearish"
-    row["Signal"] = signal if state != "N/A" else "N/A"
-
-    return row
+    except Exception:
+        # Any unexpected error → keep base_row with N/A values.
+        return base_row
 
 
-rows: List[Dict[str, object]] = []
-failed: List[str] = []
+# ---------- Streamlit UI ----------
 
-with st.spinner("Loading market data..."):
-    for ticker in watchlist:
-        try:
-            df = load_daily_history(ticker)
-        except Exception:
-            df = pd.DataFrame()
-        if df.empty or "close" not in df.columns:
-            failed.append(ticker)
-            rows.append(
-                {
-                    "Ticker": ticker,
-                    "Last price": math.nan,
-                    "%1d": math.nan,
-                    "%5d": math.nan,
-                    "%30d": math.nan,
-                    "RSI(14)": math.nan,
-                    "distance_to_SMA20 (%)": math.nan,
-                    "Fast/Slow crossover": "N/A",
-                    "Signal": "N/A",
-                    "Open in Home": f"streamlit_app.py?ticker={ticker}",
-                }
-            )
-            continue
-        rows.append(compute_row(ticker, df))
 
-if not rows:
-    st.error("No data for selected range/interval.")
-    st.stop()
+def main() -> None:
+    st.set_page_config(page_title="Watchlist Screener", layout="wide")
+    st.title("Watchlist Screener")
 
-metrics_df = pd.DataFrame(rows)
+    tickers = _read_watchlist()
 
-number_columns = {
-    "Last price": st.column_config.NumberColumn("Last price", format="$%.2f"),
-    "%1d": st.column_config.NumberColumn("%1d", format="%.2f%%"),
-    "%5d": st.column_config.NumberColumn("%5d", format="%.2f%%"),
-    "%30d": st.column_config.NumberColumn("%30d", format="%.2f%%"),
-    "RSI(14)": st.column_config.NumberColumn("RSI(14)", format="%.2f"),
-    "distance_to_SMA20 (%)": st.column_config.NumberColumn("distance_to_SMA20 (%)", format="%.2f%%"),
-}
+    if not tickers:
+        st.info(
+            "Your watchlist is empty. Add symbols to `data/watchlist.json` "
+            "to see them here."
+        )
+        return
 
-st.data_editor(
-    metrics_df,
-    hide_index=True,
-    use_container_width=True,
-    disabled=True,
-    column_config={
-        **number_columns,
-        "Fast/Slow crossover": st.column_config.TextColumn("Fast/Slow crossover"),
-        "Signal": st.column_config.TextColumn("Signal"),
-        "Open in Home": st.column_config.LinkColumn(
-            "Open in Home",
-            display_text="Open",
-            help="Open this ticker on the Home page",
-        ),
-    },
-)
-
-if failed:
-    st.warning(
-        "Data unavailable for: " + ", ".join(sorted(set(failed))) + ".",
-        icon="⚠️",
+    st.caption(
+        "Metrics computed from the last ~60 trading days at daily resolution."
     )
 
-st.caption("Daily metrics based on the last 60 trading sessions.")
+    progress = st.progress(0.0, text="Loading tickers...")
+    rows: List[Dict[str, Any]] = []
+
+    for idx, ticker in enumerate(tickers, start=1):
+        rows.append(_compute_metrics_for_ticker(ticker))
+        progress.progress(idx / len(tickers), text=f"Processed {ticker}")
+
+    progress.empty()
+
+    df = pd.DataFrame(rows)
+
+    # Sort by %30d descending by default (if available).
+    if "%30d" in df.columns:
+        df = df.sort_values("%30d", ascending=False)
+
+    st.subheader("Screener Table")
+
+    st.dataframe(
+        df,
+        use_container_width=True,
+        column_config={
+            "Open in Home": st.column_config.LinkColumn(
+                "Open in Home",
+                display_text="Open",
+                help="Open this ticker in the Home page (sets ?ticker=XYZ).",
+            )
+        },
+    )
+
+    st.caption(
+        "Columns are sortable. Click on **Open in Home** to navigate with the "
+        "selected ticker in the main page."
+    )
+
+
+if __name__ == "__main__":
+    main()
