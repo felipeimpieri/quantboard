@@ -3,14 +3,16 @@ from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
 
-from quantboard.data import get_prices
+from quantboard.data import get_prices_cached
 from quantboard.features.watchlist import load_watchlist, save_watchlist
+from quantboard.ui.state import set_param, shareable_link_button
 from quantboard.ui.theme import apply_global_theme
 
 st.set_page_config(page_title="Watchlist", page_icon="👀", layout="wide")
 apply_global_theme()
 
 st.title("Watchlist")
+shareable_link_button()
 
 watchlist = load_watchlist()
 
@@ -37,7 +39,7 @@ if watchlist:
         start = (datetime.today() - timedelta(days=30)).date()
         end = datetime.today().date()
         for tick in tickers:
-            df = get_prices(tick, start=start, end=end, interval="1d")
+            df = get_prices_cached(tick, start=start, end=end, interval="1d")
             if df.empty or "close" not in df.columns:
                 continue
             close = pd.to_numeric(df["close"], errors="coerce").dropna()
@@ -60,7 +62,7 @@ if watchlist:
             c2.write(f"{row['Last price']:.2f}")
             c3.write(f"{row['30d %']:.2f}%")
             if c4.button("Open in Home", key=f"open_{row['Ticker']}"):
-                st.experimental_set_query_params(ticker=row["Ticker"])
+                set_param("ticker", row["Ticker"])
                 try:
                     st.switch_page("streamlit_app.py")
                 except Exception:

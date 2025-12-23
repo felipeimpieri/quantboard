@@ -7,9 +7,10 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
 
-from quantboard.data import get_prices
+from quantboard.data import get_prices_cached
 from quantboard.indicators import sma, rsi
 from quantboard.plots import apply_plotly_theme
+from quantboard.ui.state import get_param, set_param, shareable_link_button
 from quantboard.ui.theme import apply_global_theme
 
 st.set_page_config(page_title="QuantBoard", page_icon="📈", layout="wide")
@@ -26,16 +27,6 @@ def _autorefresh_if_needed(enabled: bool, interval: str) -> None:
         st.session_state[key] = now
         st.rerun()
 
-@st.cache_data(ttl=60, show_spinner=False)
-def fetch_prices_cached(ticker: str, start: date | datetime, end: date | datetime, interval: str) -> pd.DataFrame:
-    df = get_prices((ticker or "").strip().upper(), start=start, end=end, interval=interval)
-    if df is None or df.empty:
-        return pd.DataFrame()
-    # normaliza a minúscula
-    df = df.rename(columns=str.lower)
-    df.index = pd.to_datetime(df.index)
-    return df.dropna()
-
 def main() -> None:
     st.title("QuantBoard — Real-time Technical Analysis")
     st.caption("Configure the sidebar to load prices and indicators. **Intraday 1m** with **60s auto-refresh**.")
@@ -43,13 +34,55 @@ def main() -> None:
     today = date.today()
     default_start = today - timedelta(days=365)
 
+    ticker = str(get_param("ticker", "AAPL")).strip().upper() or "AAPL"
+    start_date = get_param("from", default_start)
+    end_date = get_param("to", today)
+    interval_options = ["1d", "1h", "1wk", "1m"]
+    interval = str(get_param("interval", "1d"))
+    if interval not in interval_options:
+        interval = "1d"
+    auto_refresh = bool(get_param("auto_refresh", False))
+    sma_win = int(get_param("home_sma_win", 20))
+    rsi_win = int(get_param("home_rsi_win", 14))
+
     with st.sidebar:
         st.header("Parameters")
-        ticker = st.text_input("Ticker", value="AAPL").strip().upper()
-        start_date = st.date_input("From", value=default_start, max_value=today)
-        end_date = st.date_input("To", value=today, min_value=default_start, max_value=today)
-        interval = st.selectbox("Interval", ["1d", "1h", "1wk", "1m"], index=0)
-        auto_refresh = st.checkbox("Auto-refresh 1m", value=False, help="Refreshes every 60 seconds when 1m interval is selected.")
+        new_ticker = st.text_input("Ticker", value=ticker, key="ticker_input").strip().upper()
+        if new_ticker != ticker:
+            set_param("ticker", new_ticker)
+            ticker = new_ticker
+
+        new_start = st.date_input("From", value=start_date, max_value=today, key="from_input")
+        if new_start != start_date:
+            set_param("from", new_start)
+            start_date = new_start
+
+        new_end = st.date_input("To", value=end_date, min_value=default_start, max_value=today, key="to_input")
+        if new_end != end_date:
+            set_param("to", new_end)
+            end_date = new_end
+
+        new_interval = st.selectbox(
+            "Interval",
+            interval_options,
+            index=interval_options.index(interval),
+            key="interval_input",
+        )
+        if new_interval != interval:
+            set_param("interval", new_interval)
+            interval = new_interval
+
+        new_auto_refresh = st.checkbox(
+            "Auto-refresh 1m",
+            value=auto_refresh,
+            help="Refreshes every 60 seconds when 1m interval is selected.",
+            key="auto_refresh_input",
+        )
+        if new_auto_refresh != auto_refresh:
+            set_param("auto_refresh", new_auto_refresh)
+            auto_refresh = new_auto_refresh
+
+    shareable_link_button()
 
     if start_date > end_date:
         st.error("The 'From' date must be earlier than 'To'.")
@@ -62,7 +95,7 @@ def main() -> None:
         return
 
     with st.spinner("Fetching data..."):
-        prices = fetch_prices_cached(ticker, start=start_date, end=end_date, interval=interval)
+        prices = get_prices_cached(ticker, start=start_date, end=end_date, interval=interval)
 
     if prices.empty or "close" not in prices.columns:
         st.error("No data for the selected range/interval.")
@@ -101,8 +134,16 @@ def main() -> None:
     with tab_ind:
         st.subheader("SMA/RSI indicators")
         col_sma, col_rsi = st.columns(2)
-        sma_win = col_sma.slider("SMA window", 5, 200, 20, 1)
-        rsi_win = col_rsi.slider("RSI window", 2, 50, 14, 1)
+        sma_win = max(5, min(200, sma_win))
+        rsi_win = max(2, min(50, rsi_win))
+        new_sma_win = col_sma.slider("SMA window", 5, 200, int(sma_win), 1, key="home_sma_win_input")
+        if new_sma_win != sma_win:
+            set_param("home_sma_win", int(new_sma_win))
+            sma_win = int(new_sma_win)
+        new_rsi_win = col_rsi.slider("RSI window", 2, 50, int(rsi_win), 1, key="home_rsi_win_input")
+        if new_rsi_win != rsi_win:
+            set_param("home_rsi_win", int(new_rsi_win))
+            rsi_win = int(new_rsi_win)
 
         sma_ser = sma(close, int(sma_win))
         rsi_ser = rsi(close, window=int(rsi_win))
